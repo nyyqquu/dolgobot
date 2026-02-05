@@ -15,15 +15,18 @@ class Utils:
     
     @staticmethod
     def get_participant_name(user_id: int, participants: list) -> str:
-        """Получить имя участника по ID"""
+        """Получить имя участника по ID (ПРИОРИТЕТ: @username)"""
         for p in participants:
             if p['user_id'] == user_id:
+                # ПРИОРИТЕТ: @username, если есть
+                if p.get('username'):
+                    return f"@{p['username']}"
                 return p['first_name']
         return "Неизвестный"
     
     @staticmethod
     def format_summary(chat_id: int) -> str:
-        """Форматировать сводку долгов (новая логика)"""
+        """Форматировать сводку долгов"""
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -48,7 +51,7 @@ class Utils:
     
     @staticmethod
     def format_my_debts(chat_id: int, user_id: int) -> str:
-        """Форматировать мои долги (с кнопками возврата)"""
+        """Форматировать мои долги (БЕЗ ID)"""
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -66,14 +69,12 @@ class Utils:
             creditor_name = Utils.get_participant_name(debt['creditor_id'], participants)
             amount = Utils.format_amount(debt['amount'], currency)
             
-            # Информация о группе долга
             group_info = debt.get('group_info', {})
             description = group_info.get('description', 'Без описания')
             category = group_info.get('category', '')
             
             text += f"{category} *{description}*\n"
-            text += f"Должен {creditor_name}: *{amount}*\n"
-            text += f"ID: `{debt['id']}`\n\n"
+            text += f"Должен {creditor_name}: *{amount}*\n\n"
         
         total = sum(d['amount'] for d in my_debts)
         text += f"📊 Итого долгов: *{Utils.format_amount(total, currency)}*"
@@ -82,7 +83,7 @@ class Utils:
     
     @staticmethod
     def format_debts_to_me(chat_id: int, user_id: int) -> str:
-        """Форматировать долги мне (кто мне должен)"""
+        """Форматировать долги мне"""
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -96,7 +97,6 @@ class Utils:
         
         text = f"💵 *Мне должны ({currency}):*\n\n"
         
-        # Группируем по должникам
         debts_by_debtor = {}
         for debt in debts_to_me:
             debtor_id = debt['debtor_id']
@@ -111,9 +111,14 @@ class Utils:
             text += f"*{debtor_name}:* {Utils.format_amount(total_from_debtor, currency)}\n"
             
             for debt in debts:
-                # Получаем инфо о долге
-                debt_group = Database.get_trip(chat_id)  # Заглушка, нужно получить debt_group
-                text += f"  • {debt.get('description', 'долг')}\n"
+                from firebase_admin import firestore
+                db_instance = firestore.client()
+                debt_group = db_instance.collection('debt_groups').document(debt['debt_group_id']).get()
+                if debt_group.exists:
+                    group_data = debt_group.to_dict()
+                    description = group_data.get('description', 'долг')
+                    category = group_data.get('category', '💸')
+                    text += f"  {category} {description}\n"
             
             text += "\n"
         
@@ -181,19 +186,19 @@ class Utils:
         """
         mentioned_ids = []
         
-        # Ищем @username
         words = text.split()
         for word in words:
             if word.startswith('@'):
-                username = word[1:].lower()
+                username = word[1:].lower().strip('.,!?;:')
                 for p in all_participants:
                     if p.get('username', '').lower() == username:
-                        mentioned_ids.append(p['user_id'])
+                        if p['user_id'] not in mentioned_ids:
+                            mentioned_ids.append(p['user_id'])
                         break
             else:
-                # Ищем по имени
+                word_clean = word.lower().strip('.,!?;:')
                 for p in all_participants:
-                    if p['first_name'].lower() in word.lower():
+                    if p['first_name'].lower() == word_clean:
                         if p['user_id'] not in mentioned_ids:
                             mentioned_ids.append(p['user_id'])
                         break
