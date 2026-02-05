@@ -5,7 +5,7 @@ from config import CURRENCIES, EXPENSE_CATEGORIES
 class Keyboards:
     """Класс для создания ]клавиатур"""
     
-      @staticmethod
+     @staticmethod
     def main_group_menu():
         """Главное меню для группового чата"""
         keyboard = [
