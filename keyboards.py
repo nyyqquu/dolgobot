@@ -1,4 +1,4 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from config import CURRENCIES, EXPENSE_CATEGORIES
 
 
@@ -9,19 +9,9 @@ class Keyboards:
     def main_group_menu():
         """Главное меню для группового чата"""
         keyboard = [
-            [InlineKeyboardButton("➕ Добавить расход", callback_data="add_expense")],
             [InlineKeyboardButton("📌 Сводка долгов", callback_data="show_summary")],
             [InlineKeyboardButton("🧑‍🤝‍🧑 Участники", callback_data="show_participants")],
             [InlineKeyboardButton("🗑 Очистить сообщения бота", callback_data="clear_bot_messages")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def create_trip_confirm():
-        """Подтверждение создания поездки"""
-        keyboard = [
-            [InlineKeyboardButton("✅ Создать", callback_data="trip_create_confirm")],
-            [InlineKeyboardButton("❌ Отмена", callback_data="trip_create_cancel")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -65,84 +55,7 @@ class Keyboards:
                 InlineKeyboardButton("💵 Мне должны", callback_data="debts_owe_me")
             ],
             [InlineKeyboardButton("🔄 Обновить", callback_data="debts_refresh")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="dm_back")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def participant_selection(participants, selected_ids=None):
-        """Выбор участников"""
-        if selected_ids is None:
-            selected_ids = []
-        
-        keyboard = []
-        for participant in participants:
-            user_id = participant['user_id']
-            name = participant['first_name']
-            checkmark = "✅ " if user_id in selected_ids else ""
-            keyboard.append([
-                InlineKeyboardButton(
-                    f"{checkmark}{name}", 
-                    callback_data=f"participant_toggle_{user_id}"
-                )
-            ])
-        
-        keyboard.append([
-            InlineKeyboardButton("👥 Выбрать всех", callback_data="participant_all"),
-            InlineKeyboardButton("✅ Готово", callback_data="participant_done")
-        ])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
-        
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def expense_payer_selection(participants):
-        """Выбор плательщика"""
-        keyboard = []
-        for participant in participants:
-            keyboard.append([
-                InlineKeyboardButton(
-                    participant['first_name'],
-                    callback_data=f"payer_{participant['user_id']}"
-                )
-            ])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def expense_beneficiaries():
-        """За кого расход"""
-        keyboard = [
-            [InlineKeyboardButton("👥 За всех", callback_data="beneficiaries_all")],
-            [InlineKeyboardButton("✅ Выбрать участников", callback_data="beneficiaries_select")],
-            [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def expense_category():
-        """Выбор категории расхода"""
-        keyboard = []
-        row = []
-        for emoji, name in EXPENSE_CATEGORIES.items():
-            row.append(InlineKeyboardButton(f"{emoji} {name}", callback_data=f"category_{emoji}"))
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
-        if row:
-            keyboard.append(row)
-        
-        keyboard.append([InlineKeyboardButton("⏭ Пропустить", callback_data="category_skip")])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def expense_confirm():
-        """Подтверждение расхода"""
-        keyboard = [
-            [InlineKeyboardButton("✅ Сохранить", callback_data="expense_save")],
-            [InlineKeyboardButton("✏️ Изменить", callback_data="expense_edit")],
-            [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
+            [InlineKeyboardButton("🔙 На главную", callback_data="dm_back")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -164,28 +77,7 @@ class Keyboards:
                 )
             ])
         
-        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="dm_back")])
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def expense_actions(expense_id, is_author=False):
-        """Действия с расходом"""
-        keyboard = []
-        if is_author:
-            keyboard.append([
-                InlineKeyboardButton("✏️ Редактировать", callback_data=f"expense_edit_{expense_id}"),
-                InlineKeyboardButton("🗑 Удалить", callback_data=f"expense_delete_{expense_id}")
-            ])
-        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="dm_history")])
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def delete_confirm(expense_id):
-        """Подтверждение удаления"""
-        keyboard = [
-            [InlineKeyboardButton("✅ Да, удалить", callback_data=f"expense_delete_confirm_{expense_id}")],
-            [InlineKeyboardButton("❌ Отмена", callback_data="dm_history")]
-        ]
+        keyboard.append([InlineKeyboardButton("🔙 На главную", callback_data="dm_back")])
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
@@ -200,19 +92,8 @@ class Keyboards:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def add_expense_dm_button(bot_username, chat_id):
-        """Кнопка добавления расхода через ЛС"""
-        keyboard = [
-            [InlineKeyboardButton(
-                "✍️ Заполнить расход в ЛС",
-                url=f"https://t.me/{bot_username}?start=expense_{chat_id}"
-            )]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
     def summary_actions(bot_username, chat_id):
-        """Действия под сводкой"""
+        """Действия под сводкой (ИСПРАВЛЕНО: добавлена кнопка "На главную")"""
         keyboard = [
             [InlineKeyboardButton("🔄 Обновить", callback_data="show_summary")],
             [
@@ -225,10 +106,7 @@ class Keyboards:
                     url=f"https://t.me/{bot_username}?start=history_{chat_id}"
                 )
             ],
-            [InlineKeyboardButton(
-                "➕ Добавить расход",
-                url=f"https://t.me/{bot_username}?start=expense_{chat_id}"
-            )]
+            [InlineKeyboardButton("🔙 На главную", callback_data="back_to_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -237,13 +115,14 @@ class Keyboards:
         """Кнопка оплаты долга"""
         keyboard = [
             [InlineKeyboardButton("✅ Вернул долг", callback_data=f"pay_debt_{debt_id}")],
-            [InlineKeyboardButton("🔙 Назад к долгам", callback_data="debts_i_owe")]
+            [InlineKeyboardButton("🔙 К долгам", callback_data="debts_i_owe")],
+            [InlineKeyboardButton("🏠 На главную", callback_data="dm_back")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def my_debts_list(debts):
-        """Список моих долгов с кнопками оплаты"""
+        """Список моих долгов с кнопками оплаты (БЕЗ ОТОБРАЖЕНИЯ СУММЫ В КНОПКЕ)"""
         keyboard = []
         
         for debt in debts:
@@ -253,10 +132,10 @@ class Keyboards:
             
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{category} {description} - {debt['amount']:.0f}",
+                    f"{category} {description}",
                     callback_data=f"show_debt_{debt['id']}"
                 )
             ])
         
-        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="dm_back")])
+        keyboard.append([InlineKeyboardButton("🔙 На главную", callback_data="dm_back")])
         return InlineKeyboardMarkup(keyboard)
