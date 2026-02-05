@@ -7,11 +7,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# ============ ИНИЦИАЛИЗАЦИЯ FIREBASE ============
-
 def initialize_firebase():
     """Безопасная инициализация Firebase"""
-    # Проверяем, не инициализирован ли уже
     if firebase_admin._apps:
         logger.info("Firebase already initialized")
         return firestore.client()
@@ -38,8 +35,6 @@ def initialize_firebase():
     logger.info("Firebase initialized successfully")
     return firestore.client()
 
-
-# Инициализируем Firebase
 db = initialize_firebase()
 
 
@@ -89,7 +84,6 @@ class Database:
             if trip.exists:
                 participants = trip.to_dict().get('participants', [])
                 
-                # Проверяем, нет ли уже такого участника
                 if not any(p['user_id'] == user_id for p in participants):
                     participants.append({
                         'user_id': user_id,
@@ -101,7 +95,6 @@ class Database:
                     logger.info(f"Added participant @{username or user_id} to trip {chat_id}")
                     return True
                 else:
-                    # Обновляем username/first_name если изменились
                     for p in participants:
                         if p['user_id'] == user_id:
                             if p.get('username') != username or p.get('first_name') != first_name:
@@ -127,22 +120,8 @@ class Database:
     @staticmethod
     def create_debt(chat_id: int, amount: float, payer_id: int, 
                     participants: list, description: str = '', category: str = '💸'):
-        """
-        Создать долг
-        
-        ЛОГИКА (согласно ТЗ):
-        - amount: общая сумма расхода
-        - participants: ВСЕ участники расхода (включая плательщика!)
-        - amount_per_person = amount / len(participants)
-        - Долги создаются для всех, КРОМЕ плательщика
-        
-        Пример:
-        - Никита платит 2000, участники: [Никита, Саша]
-        - amount_per_person = 2000 / 2 = 1000
-        - Саша должен Никите: 1000
-        """
+        """Создать долг"""
         try:
-            # Проверка входных данных
             if not participants or len(participants) < 2:
                 logger.error("Need at least 2 participants (including payer)")
                 return None
@@ -151,22 +130,18 @@ class Database:
                 logger.error(f"Payer {payer_id} not in participants list")
                 return None
             
-            # ИСПРАВЛЕНО: Сумма делится на ВСЕХ участников (включая плательщика)
             amount_per_person = amount / len(participants)
-            
-            # Должники = все участники КРОМЕ плательщика
             debtors = [p for p in participants if p != payer_id]
             
             if not debtors:
                 logger.error("No debtors found (payer cannot owe to himself)")
                 return None
             
-            # Создаем родительскую группу долгов
             debt_group_data = {
                 'chat_id': chat_id,
                 'total_amount': amount,
                 'payer_id': payer_id,
-                'all_participants': participants,  # Все участники
+                'all_participants': participants,
                 'description': description or 'Общий расход',
                 'category': category,
                 'created_at': datetime.now(),
@@ -176,15 +151,14 @@ class Database:
             debt_group_ref = db.collection('debt_groups').add(debt_group_data)
             debt_group_id = debt_group_ref[1].id
             
-            # Создаем индивидуальные долги
             individual_debts = []
             for debtor_id in debtors:
                 debt_data = {
                     'debt_group_id': debt_group_id,
                     'chat_id': chat_id,
-                    'debtor_id': debtor_id,      # Кто должен
-                    'creditor_id': payer_id,      # Кому должен (плательщик)
-                    'amount': amount_per_person,  # ИСПРАВЛЕНО: делится на ВСЕХ
+                    'debtor_id': debtor_id,
+                    'creditor_id': payer_id,
+                    'amount': amount_per_person,
                     'is_paid': False,
                     'paid_at': None,
                     'created_at': datetime.now()
@@ -230,8 +204,29 @@ class Database:
             return []
     
     @staticmethod
+    def get_all_debt_groups(chat_id: int, limit: int = 20):
+        """Получить ВСЕ группы долгов для истории (включая погашенные)"""
+        try:
+            debt_groups = db.collection('debt_groups')\
+                .where('chat_id', '==', chat_id)\
+                .where('is_deleted', '==', False)\
+                .order_by('created_at', direction=firestore.Query.DESCENDING)\
+                .limit(limit)\
+                .stream()
+            
+            result = []
+            for dg in debt_groups:
+                data = dg.to_dict()
+                data['id'] = dg.id
+                result.append(data)
+            return result
+        except Exception as e:
+            logger.error(f"Error getting all debt groups: {e}")
+            return []
+    
+    @staticmethod
     def get_individual_debts(chat_id: int, user_id: int = None):
-        """Получить индивидуальные долги (опционально для конкретного пользователя)"""
+        """Получить индивидуальные долги"""
         try:
             query = db.collection('debts').where('chat_id', '==', chat_id)
             
@@ -252,7 +247,7 @@ class Database:
     
     @staticmethod
     def get_debts_to_user(chat_id: int, user_id: int):
-        """Получить долги, где user_id - кредитор (ему должны)"""
+        """Получить долги, где user_id - кредитор"""
         try:
             debts = db.collection('debts')\
                 .where('chat_id', '==', chat_id)\
@@ -281,7 +276,6 @@ class Database:
             })
             logger.info(f"Marked debt {debt_id} as paid")
             
-            # Возвращаем данные долга
             debt = debt_ref.get()
             if debt.exists:
                 return debt.to_dict()
@@ -292,7 +286,7 @@ class Database:
     
     @staticmethod
     def get_my_debts(chat_id: int, user_id: int):
-        """Получить мои непогашенные долги с информацией о группе"""
+        """Получить мои непогашенные долги"""
         try:
             debts = db.collection('debts')\
                 .where('chat_id', '==', chat_id)\
@@ -305,7 +299,6 @@ class Database:
                 data = debt.to_dict()
                 data['id'] = debt.id
                 
-                # Получаем информацию о группе долга
                 try:
                     debt_group = db.collection('debt_groups').document(data['debt_group_id']).get()
                     if debt_group.exists:
@@ -325,17 +318,13 @@ class Database:
     
     @staticmethod
     def get_debts_summary(chat_id: int):
-        """
-        Получить общую сводку долгов
-        Группирует: кто -> кому -> общая сумма
-        """
+        """Получить общую сводку долгов"""
         try:
             all_debts = db.collection('debts')\
                 .where('chat_id', '==', chat_id)\
                 .where('is_paid', '==', False)\
                 .stream()
             
-            # Группируем долги: кто -> кому -> сумма
             summary = {}
             
             for debt in all_debts:
@@ -362,7 +351,7 @@ class Database:
     
     @staticmethod
     def get_user_settings(user_id: int):
-        """Получить настройки пользователя (с fallback значениями)"""
+        """Получить настройки пользователя"""
         try:
             doc = db.collection('user_settings').document(str(user_id)).get()
             if doc.exists:
@@ -370,9 +359,8 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting user settings: {e}")
         
-        # Fallback значения
         return {
-            'notification_type': 'all',  # all, off
+            'notification_type': 'all',
             'language': 'ru'
         }
     
@@ -390,10 +378,7 @@ class Database:
     
     @staticmethod
     def link_user_to_trip(user_id: int, chat_id: int):
-        """
-        Связать пользователя с поездкой для ЛС
-        Автоматически создаёт/обновляет user_trips
-        """
+        """Связать пользователя с поездкой"""
         try:
             doc_ref = db.collection('user_trips').document(str(user_id))
             doc = doc_ref.get()
@@ -402,11 +387,9 @@ class Database:
                 data = doc.to_dict()
                 trips = data.get('trips', [])
                 
-                # Добавляем поездку в список, если её нет
                 if chat_id not in trips:
                     trips.append(chat_id)
                 
-                # Если активной поездки нет, делаем эту активной
                 if not data.get('active_trip'):
                     doc_ref.update({
                         'active_trip': chat_id,
@@ -419,7 +402,6 @@ class Database:
                         'updated_at': datetime.now()
                     })
             else:
-                # Создаем новый документ
                 doc_ref.set({
                     'active_trip': chat_id,
                     'trips': [chat_id],
@@ -473,7 +455,7 @@ class Database:
     
     @staticmethod
     def delete_debt_group(debt_group_id: str):
-        """Удалить группу долгов (мягкое удаление)"""
+        """Удалить группу долгов"""
         try:
             db.collection('debt_groups').document(debt_group_id).update({
                 'is_deleted': True,
@@ -487,30 +469,20 @@ class Database:
     
     @staticmethod
     def delete_trip_completely(chat_id: int):
-        """
-        Полностью удалить поездку и все связанные данные
-        КАСКАДНОЕ УДАЛЕНИЕ:
-        1. Индивидуальные долги (debts)
-        2. Группы долгов (debt_groups)
-        3. Ссылки в user_trips
-        4. Сама поездка (trips)
-        """
+        """Полностью удалить поездку и все связанные данные"""
         try:
-            # 1. Удаляем все индивидуальные долги
             debts = db.collection('debts').where('chat_id', '==', chat_id).stream()
             deleted_debts = 0
             for debt in debts:
                 db.collection('debts').document(debt.id).delete()
                 deleted_debts += 1
             
-            # 2. Удаляем все группы долгов
             debt_groups = db.collection('debt_groups').where('chat_id', '==', chat_id).stream()
             deleted_groups = 0
             for dg in debt_groups:
                 db.collection('debt_groups').document(dg.id).delete()
                 deleted_groups += 1
             
-            # 3. Удаляем поездку из user_trips для всех участников
             trip = Database.get_trip(chat_id)
             if trip:
                 participants = trip.get('participants', [])
@@ -523,11 +495,9 @@ class Database:
                         data = user_trips_doc.to_dict()
                         trips = data.get('trips', [])
                         
-                        # Удаляем chat_id из списка
                         if chat_id in trips:
                             trips.remove(chat_id)
                         
-                        # Если это была активная поездка, переключаем на другую
                         if data.get('active_trip') == chat_id:
                             new_active = trips[0] if trips else None
                             user_trips_ref.update({
@@ -541,7 +511,6 @@ class Database:
                                 'updated_at': datetime.now()
                             })
             
-            # 4. Удаляем саму поездку
             db.collection('trips').document(str(chat_id)).delete()
             
             logger.info(
