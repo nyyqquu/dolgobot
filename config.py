@@ -3,26 +3,35 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Telegram Bot Token
-BOT_TOKEN = os.getenv('BOT_TOKEN', '8287466021:AAHsTS7NKl3KirUrk82Q5tIrURd_oIu7srk')
+# ============ TELEGRAM BOT ============
 
-# Firebase
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+
+if not BOT_TOKEN:
+    raise ValueError(
+        "❌ BOT_TOKEN not found!\n"
+        "Set it in Railway environment variables or create .env file:\n"
+        "BOT_TOKEN=your_bot_token_here"
+    )
+
+# ============ FIREBASE ============
+
 FIREBASE_CREDENTIALS_PATH = 'firebase_key.json'
 
-# Currencies
-CURRENCIES = ['EUR', 'USD', 'RUB', 'GEL', 'TRY', 'THB']
+# ============ CURRENCIES ============
 
-# Default currency
+CURRENCIES = ['EUR', 'USD', 'RUB', 'THB', 'GEL', 'TRY', 'CNY']
 DEFAULT_CURRENCY = 'EUR'
 
-# Notification types
-NOTIFICATION_BALANCE_ONLY = 'balance_only'
-NOTIFICATION_ALL_EXPENSES = 'all_expenses'
-NOTIFICATION_DAILY_DIGEST = 'daily_digest'
+# ============ NOTIFICATIONS ============
+
+NOTIFICATION_ALL = 'all'
 NOTIFICATION_OFF = 'off'
 
-# Expense categories
+# ============ EXPENSE CATEGORIES ============
+
 EXPENSE_CATEGORIES = {
+    '💸': 'Общее',
     '🍽': 'Еда',
     '🚕': 'Такси',
     '🏨': 'Жильё',
@@ -30,3 +39,5 @@ EXPENSE_CATEGORIES = {
     '🛒': 'Покупки',
     '🎉': 'Развлечения'
 }
+
+DEFAULT_CATEGORY = '💸'
