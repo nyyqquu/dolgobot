@@ -11,8 +11,7 @@ class Keyboards:
         keyboard = [
             [InlineKeyboardButton("➕ Добавить долг", callback_data="show_add_expense_info")],
             [InlineKeyboardButton("📌 Сводка долгов", callback_data="show_summary")],
-            [InlineKeyboardButton("🧑‍🤝‍🧑 Участники", callback_data="show_participants")],
-            [InlineKeyboardButton("🗑 Очистить сообщения бота", callback_data="clear_bot_messages")]
+            [InlineKeyboardButton("🧑‍🤝‍🧑 Участники", callback_data="show_participants")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -146,7 +145,7 @@ class Keyboards:
     
     @staticmethod
     def debts_to_me_list(debts):
-        """Список долгов мне с кнопками подтверждения (кредитор) - НОВОЕ!"""
+        """Список долгов мне с кнопками подтверждения (кредитор)"""
         keyboard = []
         
         for debt in debts:
@@ -170,7 +169,7 @@ class Keyboards:
     
     @staticmethod
     def debt_confirm_button(debt_id):
-        """Кнопка подтверждения возврата долга (для кредитора) - НОВОЕ!"""
+        """Кнопка подтверждения возврата долга (для кредитора)"""
         keyboard = [
             [InlineKeyboardButton("✅ Подтвердить возврат", callback_data=f"confirm_debt_{debt_id}")],
             [InlineKeyboardButton("🔙 К долгам", callback_data="debts_owe_me")],
