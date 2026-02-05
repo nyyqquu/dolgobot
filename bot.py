@@ -55,10 +55,10 @@ def main():
         persistent=False
     )
     
-    # Добавление долга (ИСПРАВЛЕНО)
+    # Добавление долга В ЛС
     expense_conversation = ConversationHandler(
         entry_points=[
-            CommandHandler('expense', handlers.expense_command),
+            CommandHandler('expense', handlers.expense_command_dm),
         ],
         states={
             EXPENSE_AMOUNT: [
@@ -90,6 +90,7 @@ def main():
     application.add_handler(CommandHandler('help', handlers.help_command))
     application.add_handler(CommandHandler('summary', handlers.summary_command))
     application.add_handler(CommandHandler('participants', handlers.participants_command))
+    application.add_handler(CommandHandler('expense', handlers.expense_command_group, filters=filters.ChatType.GROUPS))
     
     # ============ CONVERSATION HANDLERS ============
     
@@ -107,16 +108,24 @@ def main():
     # Общий обработчик callback'ов (должен быть последним)
     application.add_handler(CallbackQueryHandler(handlers.callback_handler))
     
-    # Обработчик обычных текстовых сообщений в ЛС (для автодобавления в поездку)
+    # ============ TEXT HANDLERS ============
+    
+    # Обработчик текста в ГРУППЕ (для быстрого добавления долгов типа "2000 @user описание")
     application.add_handler(MessageHandler(
-        filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
-        handlers.handle_private_message
+        filters.TEXT & filters.ChatType.GROUPS & ~filters.COMMAND & filters.Regex(r'^\d+'),
+        handlers.handle_group_expense_text
     ))
     
-    # Обработчик сообщений в группе (для автодобавления участников)
+    # Обработчик обычных сообщений в группе (для автодобавления участников)
     application.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.GROUPS & ~filters.COMMAND,
         handlers.handle_group_message
+    ))
+    
+    # Обработчик сообщений в ЛС (для автодобавления в поездку)
+    application.add_handler(MessageHandler(
+        filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
+        handlers.handle_private_message
     ))
     
     # ============ ERROR HANDLER ============
