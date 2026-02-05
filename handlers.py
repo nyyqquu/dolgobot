@@ -47,7 +47,6 @@ class Handlers:
         
         trip = Database.get_trip(chat.id)
         if trip:
-            # Добавляем участника автоматически при первом сообщении
             Database.add_participant(
                 chat_id=chat.id,
                 user_id=user.id,
@@ -58,7 +57,6 @@ class Handlers:
     
     async def handle_private_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка обычных сообщений в ЛС (вне ConversationHandler)"""
-        # Если пользователь просто пишет боту, показываем кабинет
         return await self.show_dm_cabinet(update, context)
     
     # ============ КОМАНДЫ ============
@@ -123,7 +121,6 @@ class Handlers:
             await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
         
         else:
-            # Автодобавление участника
             Database.add_participant(
                 chat_id=chat.id,
                 user_id=user.id,
@@ -173,6 +170,7 @@ class Handlers:
         )
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    
     async def newtrip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Создание новой поездки"""
         chat = update.effective_chat
@@ -184,7 +182,6 @@ class Handlers:
             )
             return ConversationHandler.END
         
-        # Автодобавление участника
         Database.add_participant(
             chat_id=chat.id,
             user_id=user.id,
@@ -230,7 +227,6 @@ class Handlers:
         trip_name = update.message.text
         chat = update.effective_chat
         
-        # Удаляем сообщение пользователя
         try:
             await update.message.delete()
         except:
@@ -300,7 +296,6 @@ class Handlers:
             creator_id=user.id
         )
         
-        # Добавляем создателя
         Database.add_participant(
             chat_id=chat.id,
             user_id=user.id,
@@ -309,7 +304,6 @@ class Handlers:
         )
         Database.link_user_to_trip(user.id, chat.id)
         
-        # ОДНО СООБЩЕНИЕ ВМЕСТО ТРЁХ
         text = (
             f"✅ Поездка *{trip['name']}* ({currency}) создана!\n\n"
             f"👥 Участники добавляются автоматически\n\n"
@@ -322,7 +316,6 @@ class Handlers:
             reply_markup=Keyboards.main_group_menu()
         )
         
-        # Отправляем ТОЛЬКО сводку долгов
         summary_text = f"📌 *Сводка долгов ({currency})*\n\n✅ Пока долгов нет"
         await context.bot.send_message(
             chat_id=chat.id,
@@ -341,7 +334,6 @@ class Handlers:
         await query.edit_message_text("❌ Отменено.")
         context.user_data.clear()
         return ConversationHandler.END
-    
     async def delete_trip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Удалить поездку и все связанные данные"""
         chat = update.effective_chat
@@ -352,7 +344,6 @@ class Handlers:
             await update.message.reply_text("❌ Поездка не найдена")
             return
         
-        # Проверяем, является ли пользователь создателем или админом
         try:
             member = await context.bot.get_chat_member(chat.id, user.id)
             if member.status not in ['creator', 'administrator'] and trip['creator_id'] != user.id:
@@ -386,7 +377,6 @@ class Handlers:
         """Удалить все сообщения бота в чате"""
         chat = update.effective_chat
         
-        # Проверяем права
         try:
             member = await context.bot.get_chat_member(chat.id, update.effective_user.id)
             if member.status not in ['creator', 'administrator']:
@@ -400,12 +390,6 @@ class Handlers:
         
         deleted_count = 0
         try:
-            # Получаем ID бота
-            bot_info = await context.bot.get_me()
-            bot_id = bot_info.id
-            
-            # Удаляем последние 100 сообщений (ограничение Telegram API)
-            # В реальности нужно сохранять message_id в БД для точного удаления
             for i in range(100):
                 try:
                     await context.bot.delete_message(chat.id, update.message.message_id - i)
@@ -423,6 +407,7 @@ class Handlers:
             await update.message.delete()
         except:
             pass
+    
     async def summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать сводку долгов"""
         chat = update.effective_chat
@@ -434,7 +419,6 @@ class Handlers:
             )
             return
         
-        # Автодобавление участника
         Database.add_participant(
             chat_id=chat.id,
             user_id=user.id,
@@ -469,7 +453,6 @@ class Handlers:
             )
             return
         
-        # Автодобавление участника
         Database.add_participant(
             chat_id=chat.id,
             user_id=user.id,
@@ -504,7 +487,6 @@ class Handlers:
         chat = update.effective_chat
         user = update.effective_user
         
-        # Автодобавление участника
         Database.add_participant(
             chat_id=chat.id,
             user_id=user.id,
@@ -554,7 +536,6 @@ class Handlers:
         if active_trip_id:
             trip = Database.get_trip(active_trip_id)
             
-            # Получаем все поездки пользователя
             user_trips_doc = Database.get_user_trips(user.id)
             trip_count = len(user_trips_doc.get('trips', [])) if user_trips_doc else 1
             
@@ -836,15 +817,15 @@ class Handlers:
         Database.update_user_settings(user.id, notification_type=notif_type)
         
         await self.show_notifications_settings(update, context)
-    # ============ ДОБАВЛЕНИЕ ДОЛГА ============
     
-        async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Парсинг сообщения типа "2000 @user1 @user2 описание" в группе"""
+    # ============ ДОБАВЛЕНИЕ ДОЛГА В ГРУППЕ ============
+    
+    async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Парсинг сообщения типа 2000 @user1 @user2 описание в группе"""
         text = update.message.text
         chat = update.effective_chat
         user = update.effective_user
         
-        # Автодобавление участника
         Database.add_participant(
             chat_id=chat.id,
             user_id=user.id,
@@ -860,7 +841,6 @@ class Handlers:
         participants = Database.get_participants(chat.id)
         parts = text.split()
         
-        # Валидация суммы
         is_valid, amount = Utils.validate_amount(parts[0])
         if not is_valid:
             sent = await update.message.reply_text(
@@ -875,18 +855,13 @@ class Handlers:
                 pass
             return
         
-        # Парсим участников
         mentioned_ids = Utils.parse_participants_from_text(text, participants)
         
-        # ИСПРАВЛЕНО: Разрешаем 0 участников (только организатор платит за себя)
-        # Автор ВСЕГДА плательщик
         payer_id = user.id
         
-        # Добавляем автора в список участников, если его там нет
         if payer_id not in mentioned_ids:
             mentioned_ids.append(payer_id)
         
-        # ИСПРАВЛЕНО: Если только 1 участник (сам организатор), то долг не создаём
         if len(mentioned_ids) == 1 and mentioned_ids[0] == payer_id:
             sent = await update.message.reply_text(
                 "❌ Нельзя создать долг только на себя!\n\n"
@@ -901,7 +876,6 @@ class Handlers:
                 pass
             return
         
-        # Извлекаем описание
         description_parts = []
         for part in parts[1:]:
             if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
@@ -909,12 +883,11 @@ class Handlers:
         
         description = ' '.join(description_parts) if description_parts else "Общий расход"
         
-        # Создаём долг
         debt_result = Database.create_debt(
             chat_id=chat.id,
             amount=amount,
             payer_id=payer_id,
-            participants=mentioned_ids,  # Все участники (включая плательщика)
+            participants=mentioned_ids,
             description=description,
             category='💸'
         )
@@ -932,9 +905,8 @@ class Handlers:
                 pass
             return
         
-        # Формируем ответ
         debtors = [p for p in mentioned_ids if p != payer_id]
-        amount_per_person = amount / len(mentioned_ids)  # Делим на ВСЕХ участников
+        amount_per_person = amount / len(mentioned_ids)
         
         debtor_names = [Utils.get_participant_name(d, participants) for d in debtors]
         payer_name = Utils.get_participant_name(payer_id, participants)
@@ -954,7 +926,6 @@ class Handlers:
             reply_to_message_id=update.message.message_id
         )
         
-        # Удаляем через 10 секунд
         await asyncio.sleep(10)
         try:
             await update.message.delete()
@@ -962,7 +933,6 @@ class Handlers:
         except:
             pass
         
-        # Обновляем сводку
         summary_text = Utils.format_summary(chat.id)
         await context.bot.send_message(
             chat_id=chat.id,
@@ -971,11 +941,11 @@ class Handlers:
             reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
         )
         
-        # Отправляем уведомления
         await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
-
     
-        async def start_debt_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ============ ДОБАВЛЕНИЕ ДОЛГА В ЛС ============
+    
+    async def start_debt_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Начать процесс добавления долга в ЛС"""
         user = update.effective_user
         
@@ -1021,7 +991,6 @@ class Handlers:
             "✍️ Напишите ваш долг:"
         )
         
-        # УБРАЛИ КНОПКУ "ПРОПУСТИТЬ", ОСТАВИЛИ ТОЛЬКО "ОТМЕНА"
         keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]]
         
         if update.callback_query:
@@ -1041,7 +1010,7 @@ class Handlers:
         
         return EXPENSE_AMOUNT
     
-        async def expense_amount_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def expense_amount_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Парсинг долга из сообщения"""
         text = update.message.text
         chat_id = context.user_data['expense_chat_id']
@@ -1076,51 +1045,6 @@ class Handlers:
                 chat_id=user.id,
                 text="❌ Укажите минимум 2 участников",
                 reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            await self.save_message_id(context, sent_message.message_id)
-            return EXPENSE_AMOUNT
-        
-        description_parts = []
-        for part in parts[1:]:
-            if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
-                description_parts.append(part)
-        
-        description = ' '.join(description_parts) if description_parts else "Общий расход"
-        
-        context.user_data['expense_data'] = {
-            'amount': amount,
-            'participants': mentioned_ids,
-            'description': description
-        }
-        
-        mentioned_participants = [p for p in participants if p['user_id'] in mentioned_ids]
-        
-        text = (
-            f"✅ Сумма: *{amount}*\n"
-            f"👥 Участники: {len(mentioned_ids)}\n"
-            f"📝 Описание: {description}\n\n"
-            "💳 Кто заплатил?"
-        )
-        
-        await self.delete_previous_message(context, user.id)
-        sent_message = await context.bot.send_message(
-            chat_id=user.id,
-            text=text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.expense_payer_selection(mentioned_participants)
-        )
-        await self.save_message_id(context, sent_message.message_id)
-        
-        return EXPENSE_PAYER
-        
-        mentioned_ids = Utils.parse_participants_from_text(text, participants)
-        
-        if len(mentioned_ids) < 2:
-            await self.delete_previous_message(context, user.id)
-            sent_message = await context.bot.send_message(
-                chat_id=user.id,
-                text="❌ Укажите минимум 2 участников",
-                reply_markup=Keyboards.skip_or_cancel()
             )
             await self.save_message_id(context, sent_message.message_id)
             return EXPENSE_AMOUNT
@@ -1332,6 +1256,7 @@ class Handlers:
         await query.edit_message_text("❌ Отменено")
         context.user_data.clear()
         return ConversationHandler.END
+    
     # ============ ВОЗВРАТ ДОЛГА ============
     
     async def show_debt_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1458,7 +1383,6 @@ class Handlers:
         query = update.callback_query
         data = query.data
         
-        # Личный кабинет
         if data == "dm_back":
             return await self.show_dm_cabinet(update, context)
         
@@ -1476,51 +1400,10 @@ class Handlers:
         
         elif data == "dm_switch_trip":
             return await self.show_trip_switch(update, context)
-
-         elif data == "clear_bot_messages":
-            await query.answer()
-            chat = query.message.chat
-            
-            # Проверяем права
-            try:
-                member = await context.bot.get_chat_member(chat.id, query.from_user.id)
-                if member.status not in ['creator', 'administrator']:
-                    await query.answer("❌ Только админы могут использовать эту функцию", show_alert=True)
-                    return
-            except:
-                await query.answer("❌ Ошибка проверки прав", show_alert=True)
-                return
-            
-            await query.edit_message_text("🔄 Удаляю сообщения бота...")
-            
-            deleted_count = 0
-            try:
-                # Пытаемся удалить последние 100 сообщений
-                for i in range(1, 101):
-                    try:
-                        await context.bot.delete_message(chat.id, query.message.message_id - i)
-                        deleted_count += 1
-                        await asyncio.sleep(0.05)
-                    except:
-                        pass
-            except Exception as e:
-                logger.error(f"Error clearing messages: {e}")
-            
-            # Удаляем само сообщение о результате через 3 секунды
-            result_msg = await context.bot.send_message(
-                chat_id=chat.id,
-                text=f"✅ Удалено сообщений: {deleted_count}"
-            )
-            await asyncio.sleep(3)
-            try:
-                await result_msg.delete()
-            except:
-                pass
         
         elif data.startswith("switch_trip_"):
             return await self.switch_active_trip(update, context)
         
-        # Долги
         elif data == "debts_i_owe":
             return await self.show_i_owe(update, context)
         
@@ -1536,16 +1419,13 @@ class Handlers:
         elif data.startswith("pay_debt_"):
             return await self.pay_debt(update, context)
         
-        # Добавление долга
         elif data == "add_expense":
             return await self.start_debt_flow(update, context)
         
-        # Удаление поездки
         elif data.startswith("confirm_delete_trip_"):
             await query.answer()
             chat_id = int(data.split('_')[3])
             
-            # Удаляем все данные
             success = Database.delete_trip_completely(chat_id)
             
             if success:
@@ -1561,7 +1441,43 @@ class Handlers:
             await query.answer()
             await query.edit_message_text("❌ Удаление отменено")
         
-        # Сводка и участники в группе
+        elif data == "clear_bot_messages":
+            await query.answer()
+            chat = query.message.chat
+            
+            try:
+                member = await context.bot.get_chat_member(chat.id, query.from_user.id)
+                if member.status not in ['creator', 'administrator']:
+                    await query.answer("❌ Только админы могут использовать эту функцию", show_alert=True)
+                    return
+            except:
+                await query.answer("❌ Ошибка проверки прав", show_alert=True)
+                return
+            
+            await query.edit_message_text("🔄 Удаляю сообщения бота...")
+            
+            deleted_count = 0
+            try:
+                for i in range(1, 101):
+                    try:
+                        await context.bot.delete_message(chat.id, query.message.message_id - i)
+                        deleted_count += 1
+                        await asyncio.sleep(0.05)
+                    except:
+                        pass
+            except Exception as e:
+                logger.error(f"Error clearing messages: {e}")
+            
+            result_msg = await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"✅ Удалено сообщений: {deleted_count}"
+            )
+            await asyncio.sleep(3)
+            try:
+                await result_msg.delete()
+            except:
+                pass
+        
         elif data == "show_summary":
             chat = query.message.chat
             trip = Database.get_trip(chat.id)
