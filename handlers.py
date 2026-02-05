@@ -133,6 +133,7 @@ class Handlers:
             "ℹ️ *Помощь по боту*\n\n"
             "*Команды для группового чата:*\n"
             "/newtrip — Создать новую поездку\n"
+            "/join — Присоединиться к поездке\n"
             "/start — Показать меню поездки\n"
             "/summary — Показать сводку долгов\n"
             "/participants — Показать участников\n"
@@ -148,6 +149,51 @@ class Handlers:
         )
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    
+    async def join_trip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Быстрое присоединение к поездке (с автоудалением)"""
+        chat = update.effective_chat
+        user = update.effective_user
+        
+        if chat.type == 'private':
+            await update.message.reply_text(
+                "❌ Эту команду нужно использовать в групповом чате поездки!"
+            )
+            return
+        
+        trip = Database.get_trip(chat.id)
+        if not trip:
+            sent = await update.message.reply_text(
+                "❌ Поездка не создана. Используйте /newtrip"
+            )
+            await asyncio.sleep(5)
+            try:
+                await update.message.delete()
+                await sent.delete()
+            except:
+                pass
+            return
+        
+        Database.add_participant(
+            chat_id=chat.id,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name
+        )
+        Database.link_user_to_trip(user.id, chat.id)
+        
+        username_display = f"@{user.username}" if user.username else user.first_name
+        sent = await update.message.reply_text(
+            f"✅ {username_display} добавлен в поездку *{trip['name']}*!",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        await asyncio.sleep(3)
+        try:
+            await update.message.delete()
+            await sent.delete()
+        except Exception as e:
+            logger.error(f"Failed to delete join messages: {e}")
     
     async def newtrip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Создание новой поездки"""
@@ -278,7 +324,8 @@ class Handlers:
         
         text = (
             f"✅ Поездка *{trip['name']}* ({currency}) создана!\n\n"
-            f"👥 Участники добавляются автоматически\n\n"
+            f"👥 Участники добавляются автоматически\n"
+            f"💡 Или используйте /join для быстрого добавления\n\n"
             f"Управление поездкой:"
         )
         
@@ -495,7 +542,7 @@ class Handlers:
                 "Чтобы начать:\n"
                 "1. Добавьте бота в групповой чат\n"
                 "2. Создайте поездку командой /newtrip\n"
-                "3. Вы автоматически добавитесь в поездку"
+                "3. Используйте /join для присоединения"
             )
             keyboard_markup = None
         
@@ -709,35 +756,6 @@ class Handlers:
             reply_markup=Keyboards.notification_settings(current_type)
         )
     
-    async def show_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать настройки"""
-        query = update.callback_query
-        await query.answer()
-        
-        user = query.from_user
-        settings = Database.get_user_settings(user.id)
-        notif_type = settings.get('notification_type', 'all')
-        
-        notif_text = "✅ Включены" if notif_type == 'all' else "❌ Выключены"
-        
-        text = (
-            "⚙️ *Настройки*\n\n"
-            f"🔔 Уведомления: {notif_text}\n"
-            f"🌐 Язык: Русский\n\n"
-            "Выберите действие:"
-        )
-        
-        keyboard = [
-            [InlineKeyboardButton("🔔 Настроить уведомления", callback_data="dm_notifications")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="dm_back")]
-        ]
-        
-        await query.edit_message_text(
-            text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    
     async def update_notification_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обновить настройки уведомлений"""
         query = update.callback_query
@@ -750,7 +768,7 @@ class Handlers:
         
         await self.show_notifications_settings(update, context)
     
-    # ============ ДОБАВЛЕНИЕ ДОЛГА В ГРУППЕ (ЕДИНСТВЕННЫЙ СПОСОБ) ============
+    # ============ ДОБАВЛЕНИЕ ДОЛГА В ГРУППЕ ============
     
     async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Парсинг сообщения типа 2000 @user1 @user2 описание в группе"""
@@ -878,7 +896,7 @@ class Handlers:
     async def send_debt_notifications(self, context: ContextTypes.DEFAULT_TYPE, 
                                       chat_id: int, debt_result: dict, 
                                       participants: list, trip: dict):
-        """Отправить уведомления о долге (ИСПРАВЛЕНО: правильная сумма)"""
+        """Отправить уведомления о долге"""
         group_data = debt_result['group_data']
         individual_debts = debt_result['debts']
         
@@ -887,10 +905,9 @@ class Handlers:
         description = group_data['description']
         category = group_data.get('category', '💸')
         
-        # Отправляем должникам (ИСПРАВЛЕНО: amount_per_person из individual_debts)
         for debt in individual_debts:
             debtor_id = debt['debtor_id']
-            amount = debt['amount']  # ЭТО УЖЕ ПРАВИЛЬНАЯ СУММА НА ЧЕЛОВЕКА
+            amount = debt['amount']
             
             settings = Database.get_user_settings(debtor_id)
             if settings.get('notification_type') == 'off':
@@ -912,7 +929,6 @@ class Handlers:
             except Exception as e:
                 logger.error(f"Failed to send notification to {debtor_id}: {e}")
         
-        # Отправляем плательщику
         try:
             total_owed = sum(d['amount'] for d in individual_debts)
             text = (
