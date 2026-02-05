@@ -5,10 +5,7 @@ from database import Database
 from keyboards import Keyboards
 from utils import Utils
 import logging
-import asyncio  # ДОБАВИТЬ ЭТУ СТРОКУ
-
-logger = logging.getLogger(__name__)
-
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +116,7 @@ class Handlers:
                 "1. Добавьте меня в групповой чат поездки\n"
                 "2. Создайте поездку командой /newtrip\n"
                 "3. Все участники чата автоматически добавятся\n"
-                "4. Добавляйте долги через @упоминания\n\n"
+                "4. Добавляйте долги: `2000 @user описание`\n\n"
                 "💡 У вас пока нет активной поездки."
             )
             
@@ -162,10 +159,12 @@ class Handlers:
             "/newtrip — Создать новую поездку\n"
             "/start — Показать меню поездки\n"
             "/summary — Показать сводку долгов\n"
-            "/expense — Добавить долг\n"
-            "/participants — Показать участников\n\n"
-            "*Формат добавления долга:*\n"
-            "`сумма @участник1 @участник2 описание`\n"
+            "/expense — Добавить долг через ЛС\n"
+            "/participants — Показать участников\n"
+            "/deletetrip — Удалить поездку и все данные\n"
+            "/clear — Удалить все сообщения бота\n\n"
+            "*Быстрое добавление долга:*\n"
+            "`2000 @участник1 @участник2 описание`\n"
             "Пример: `2000 @саша @никита такси`\n\n"
             "*В личном кабинете:*\n"
             "📌 Долги — посмотреть свои долги\n"
@@ -174,7 +173,6 @@ class Handlers:
         )
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-    
     async def newtrip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Создание новой поездки"""
         chat = update.effective_chat
@@ -199,7 +197,7 @@ class Handlers:
         if existing_trip:
             text = (
                 f"ℹ️ Поездка *{existing_trip['name']}* уже создана для этого чата.\n\n"
-                "Используйте /start для управления."
+                "Используйте /start для управления или /deletetrip для удаления."
             )
             await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
             return ConversationHandler.END
@@ -285,6 +283,7 @@ class Handlers:
         )
         
         return TRIP_CURRENCY
+    
     async def trip_currency_select(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Выбор валюты поездки"""
         query = update.callback_query
@@ -333,8 +332,97 @@ class Handlers:
         )
         
         return ConversationHandler.END
-
     
+    async def cancel_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Универсальный обработчик отмены"""
+        query = update.callback_query
+        await query.answer()
+        
+        await query.edit_message_text("❌ Отменено.")
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    async def delete_trip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Удалить поездку и все связанные данные"""
+        chat = update.effective_chat
+        user = update.effective_user
+        
+        trip = Database.get_trip(chat.id)
+        if not trip:
+            await update.message.reply_text("❌ Поездка не найдена")
+            return
+        
+        # Проверяем, является ли пользователь создателем или админом
+        try:
+            member = await context.bot.get_chat_member(chat.id, user.id)
+            if member.status not in ['creator', 'administrator'] and trip['creator_id'] != user.id:
+                await update.message.reply_text("❌ Только создатель поездки или админы могут удалить поездку")
+                return
+        except:
+            pass
+        
+        keyboard = [
+            [InlineKeyboardButton("⚠️ Да, удалить всё", callback_data=f"confirm_delete_trip_{chat.id}")],
+            [InlineKeyboardButton("❌ Отмена", callback_data="cancel_delete_trip")]
+        ]
+        
+        text = (
+            f"⚠️ *Удаление поездки \"{trip['name']}\"*\n\n"
+            "Будут удалены:\n"
+            "• Все долги\n"
+            "• История расходов\n"
+            "• Участники\n"
+            "• Вся информация о поездке\n\n"
+            "⚠️ Это действие нельзя отменить!"
+        )
+        
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    async def clear_bot_messages(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Удалить все сообщения бота в чате"""
+        chat = update.effective_chat
+        
+        # Проверяем права
+        try:
+            member = await context.bot.get_chat_member(chat.id, update.effective_user.id)
+            if member.status not in ['creator', 'administrator']:
+                await update.message.reply_text("❌ Только админы могут использовать эту команду")
+                return
+        except:
+            await update.message.reply_text("❌ Не удалось проверить права")
+            return
+        
+        sent = await update.message.reply_text("🔄 Удаляю сообщения бота...")
+        
+        deleted_count = 0
+        try:
+            # Получаем ID бота
+            bot_info = await context.bot.get_me()
+            bot_id = bot_info.id
+            
+            # Удаляем последние 100 сообщений (ограничение Telegram API)
+            # В реальности нужно сохранять message_id в БД для точного удаления
+            for i in range(100):
+                try:
+                    await context.bot.delete_message(chat.id, update.message.message_id - i)
+                    deleted_count += 1
+                    await asyncio.sleep(0.1)
+                except:
+                    pass
+        except Exception as e:
+            logger.error(f"Error clearing messages: {e}")
+        
+        await sent.edit_text(f"✅ Удалено сообщений: {deleted_count}")
+        await asyncio.sleep(3)
+        try:
+            await sent.delete()
+            await update.message.delete()
+        except:
+            pass
     async def summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать сводку долгов"""
         chat = update.effective_chat
@@ -411,13 +499,10 @@ class Handlers:
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     
-    async def expense_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Добавить долг (перенаправление в ЛС)"""
+    async def expense_command_group(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /expense в группе - показываем кнопку ЛС"""
         chat = update.effective_chat
         user = update.effective_user
-        
-        if chat.type == 'private':
-            return await self.start_debt_flow(update, context)
         
         # Автодобавление участника
         Database.add_participant(
@@ -446,6 +531,10 @@ class Handlers:
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.add_expense_dm_button(self.bot_username, chat.id)
         )
+    
+    async def expense_command_dm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /expense в ЛС - запускаем ConversationHandler"""
+        return await self.start_debt_flow(update, context)
     
     # ============ ЛИЧНЫЙ КАБИНЕТ ============
     
@@ -599,6 +688,7 @@ class Handlers:
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=Keyboards.debts_tabs()
             )
+    
     async def show_i_owe(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать мои долги с кнопками"""
         query = update.callback_query
@@ -707,7 +797,7 @@ class Handlers:
         )
     
     async def show_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать настройки (ИСПРАВЛЕНО)"""
+        """Показать настройки"""
         query = update.callback_query
         await query.answer()
         
@@ -746,11 +836,139 @@ class Handlers:
         Database.update_user_settings(user.id, notification_type=notif_type)
         
         await self.show_notifications_settings(update, context)
+    # ============ ДОБАВЛЕНИЕ ДОЛГА ============
     
-    # ============ ДОБАВЛЕНИЕ ДОЛГА (НОВАЯ ЛОГИКА) ============
+    async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Парсинг сообщения типа "2000 @user1 @user2 описание" в группе"""
+        text = update.message.text
+        chat = update.effective_chat
+        user = update.effective_user
+        
+        # Автодобавление участника
+        Database.add_participant(
+            chat_id=chat.id,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name
+        )
+        Database.link_user_to_trip(user.id, chat.id)
+        
+        trip = Database.get_trip(chat.id)
+        if not trip:
+            return
+        
+        participants = Database.get_participants(chat.id)
+        parts = text.split()
+        
+        # Валидация суммы
+        is_valid, amount = Utils.validate_amount(parts[0])
+        if not is_valid:
+            sent = await update.message.reply_text(
+                f"❌ {amount}",
+                reply_to_message_id=update.message.message_id
+            )
+            await asyncio.sleep(5)
+            try:
+                await sent.delete()
+                await update.message.delete()
+            except:
+                pass
+            return
+        
+        # Парсим участников
+        mentioned_ids = Utils.parse_participants_from_text(text, participants)
+        
+        if len(mentioned_ids) < 1:
+            sent = await update.message.reply_text(
+                "❌ Укажите минимум 1 участника через @\n\n"
+                "Пример: `2000 @саша такси` (вы автоматически добавитесь как плательщик)",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_to_message_id=update.message.message_id
+            )
+            await asyncio.sleep(5)
+            try:
+                await sent.delete()
+                await update.message.delete()
+            except:
+                pass
+            return
+        
+        # Автор ВСЕГДА плательщик
+        payer_id = user.id
+        
+        # Добавляем автора в список участников, если его там нет
+        if payer_id not in mentioned_ids:
+            mentioned_ids.append(payer_id)
+        
+        # Извлекаем описание
+        description_parts = []
+        for part in parts[1:]:
+            if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
+                description_parts.append(part)
+        
+        description = ' '.join(description_parts) if description_parts else "Общий расход"
+        
+        # Создаём долг
+        debt_result = Database.create_debt(
+            chat_id=chat.id,
+            amount=amount,
+            payer_id=payer_id,
+            participants=mentioned_ids,
+            description=description,
+            category='💸'
+        )
+        
+        if not debt_result:
+            await update.message.reply_text(
+                "❌ Ошибка создания долга",
+                reply_to_message_id=update.message.message_id
+            )
+            return
+        
+        # Формируем ответ
+        debtors = [p for p in mentioned_ids if p != payer_id]
+        amount_per_person = amount / len(mentioned_ids)
+        
+        debtor_names = [Utils.get_participant_name(d, participants) for d in debtors]
+        payer_name = Utils.get_participant_name(payer_id, participants)
+        
+        response_text = (
+            f"✅ *Долг добавлен!*\n\n"
+            f"💸 *{description}*\n"
+            f"💰 Общая сумма: {Utils.format_amount(amount, trip['currency'])}\n"
+            f"👤 Заплатил: {payer_name}\n"
+            f"💳 Долг каждого: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
+            f"👥 Должники ({len(debtors)}): {', '.join(debtor_names)}"
+        )
+        
+        sent_response = await update.message.reply_text(
+            response_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_to_message_id=update.message.message_id
+        )
+        
+        # Удаляем через 10 секунд
+        await asyncio.sleep(10)
+        try:
+            await update.message.delete()
+            await sent_response.delete()
+        except:
+            pass
+        
+        # Обновляем сводку
+        summary_text = Utils.format_summary(chat.id)
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=summary_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
+        )
+        
+        # Отправляем уведомления
+        await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
     
     async def start_debt_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начать процесс добавления долга"""
+        """Начать процесс добавления долга в ЛС"""
         user = update.effective_user
         
         chat_id = context.user_data.get('expense_chat_id')
@@ -813,13 +1031,12 @@ class Handlers:
         return EXPENSE_AMOUNT
     
     async def expense_amount_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Новая логика: парсим всё из одного сообщения"""
+        """Парсинг долга из сообщения"""
         text = update.message.text
         chat_id = context.user_data['expense_chat_id']
         user = update.effective_user
         participants = Database.get_participants(chat_id)
         
-        # Удаляем сообщение пользователя
         try:
             await update.message.delete()
         except:
@@ -832,10 +1049,7 @@ class Handlers:
             await self.delete_previous_message(context, user.id)
             sent_message = await context.bot.send_message(
                 chat_id=user.id,
-                text=f"❌ {amount}\n\n"
-                "Начните сообщение с суммы, например:\n"
-                "`2000 @саша @никита такси`",
-                parse_mode=ParseMode.MARKDOWN,
+                text=f"❌ {amount}\n\nНачните сообщение с суммы",
                 reply_markup=Keyboards.skip_or_cancel()
             )
             await self.save_message_id(context, sent_message.message_id)
@@ -847,9 +1061,7 @@ class Handlers:
             await self.delete_previous_message(context, user.id)
             sent_message = await context.bot.send_message(
                 chat_id=user.id,
-                text="❌ Укажите минимум 2 участников через @ или по имени\n\n"
-                "Пример: `2000 @никита @саша такси`",
-                parse_mode=ParseMode.MARKDOWN,
+                text="❌ Укажите минимум 2 участников",
                 reply_markup=Keyboards.skip_or_cancel()
             )
             await self.save_message_id(context, sent_message.message_id)
@@ -889,11 +1101,11 @@ class Handlers:
         return EXPENSE_PAYER
     
     async def expense_skip(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Пропустить ввод (ИСПРАВЛЕНО)"""
+        """Пропустить"""
         query = update.callback_query
         await query.answer()
         
-        await query.edit_message_text("⏭ Пропущено. Используйте /expense для добавления долга.")
+        await query.edit_message_text("⏭ Пропущено")
         context.user_data.clear()
         return ConversationHandler.END
     
@@ -934,7 +1146,7 @@ class Handlers:
         return await self.expense_confirm_and_save(update, context)
     
     async def expense_confirm_and_save(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Подтверждение и сохранение"""
+        """Сохранение долга"""
         query = update.callback_query
         
         expense_data = context.user_data['expense_data']
@@ -965,16 +1177,14 @@ class Handlers:
             return ConversationHandler.END
         
         debtors = [p for p in debt_participants if p != payer_id]
-        amount_per_person = amount / len(debtors)
+        amount_per_person = amount / len(debt_participants)
         
         await query.edit_message_text(
             f"✅ Долг добавлен!\n\n"
             f"{category} *{description}*\n"
             f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
             f"👤 Заплатил: {payer_name}\n"
-            f"💳 На человека: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
-            f"Участников: {len(debt_participants)}\n"
-            f"Должников: {len(debtors)}",
+            f"💳 На человека: {Utils.format_amount(amount_per_person, trip['currency'])}",
             parse_mode=ParseMode.MARKDOWN
         )
         
@@ -1015,7 +1225,7 @@ class Handlers:
     async def send_debt_notifications(self, context: ContextTypes.DEFAULT_TYPE, 
                                       chat_id: int, debt_result: dict, 
                                       participants: list, trip: dict):
-        """Отправить пуш-уведомления о новом долге"""
+        """Отправить уведомления о долге"""
         group_data = debt_result['group_data']
         individual_debts = debt_result['debts']
         
@@ -1066,412 +1276,10 @@ class Handlers:
             logger.error(f"Failed to send notification to payer {payer_id}: {e}")
     
     async def expense_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отмена добавления долга"""
+        """Отмена"""
         query = update.callback_query
         await query.answer()
         
-        await query.edit_message_text("❌ Добавление долга отменено.")
+        await query.edit_message_text("❌ Отменено")
         context.user_data.clear()
         return ConversationHandler.END
-    
-    # ============ ВОЗВРАТ ДОЛГА ============
-    
-    async def show_debt_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать детали конкретного долга с кнопкой оплаты"""
-        query = update.callback_query
-        await query.answer()
-        
-        debt_id = query.data.split('_')[2]
-        
-        from firebase_admin import firestore
-        db_instance = firestore.client()
-        
-        debt_doc = db_instance.collection('debts').document(debt_id).get()
-        if not debt_doc.exists:
-            await query.edit_message_text("❌ Долг не найден")
-            return
-        
-        debt = debt_doc.to_dict()
-        chat_id = debt['chat_id']
-        trip = Database.get_trip(chat_id)
-        participants = Database.get_participants(chat_id)
-        
-        debt_group = db_instance.collection('debt_groups').document(debt['debt_group_id']).get()
-        if debt_group.exists:
-            group_data = debt_group.to_dict()
-            description = group_data.get('description', 'Долг')
-            category = group_data.get('category', '💸')
-        else:
-            description = "Долг"
-            category = "💸"
-        
-        creditor_name = Utils.get_participant_name(debt['creditor_id'], participants)
-        amount = Utils.format_amount(debt['amount'], trip['currency'])
-        
-        text = (
-            f"{category} *{description}*\n\n"
-            f"💰 Сумма: *{amount}*\n"
-            f"👤 Должен: {creditor_name}\n"
-            f"📅 Создан: {debt['created_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
-            f"Вернули долг?"
-        )
-        
-        await query.edit_message_text(
-            text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.debt_pay_button(debt_id)
-        )
-    
-    async def pay_debt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отметить долг как возвращенный"""
-        query = update.callback_query
-        await query.answer("✅ Долг отмечен как возвращенный!")
-        
-        debt_id = query.data.split('_')[2]
-        
-        debt_data = Database.mark_debt_paid(debt_id)
-        
-        if not debt_data:
-            await query.edit_message_text("❌ Ошибка при обновлении долга")
-            return
-        
-        chat_id = debt_data['chat_id']
-        creditor_id = debt_data['creditor_id']
-        debtor_id = debt_data['debtor_id']
-        amount = debt_data['amount']
-        
-        trip = Database.get_trip(chat_id)
-        participants = Database.get_participants(chat_id)
-        
-        debtor_name = Utils.get_participant_name(debtor_id, participants)
-        creditor_name = Utils.get_participant_name(creditor_id, participants)
-        
-        from firebase_admin import firestore
-        db_instance = firestore.client()
-        
-        debt_group = db_instance.collection('debt_groups').document(debt_data['debt_group_id']).get()
-        description = "Долг"
-        category = "💸"
-        if debt_group.exists:
-            group_data = debt_group.to_dict()
-            description = group_data.get('description', 'Долг')
-            category = group_data.get('category', '💸')
-        
-        await query.edit_message_text(
-            f"✅ *Долг возвращен!*\n\n"
-            f"{category} {description}\n"
-            f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
-            f"👤 Кредитор: {creditor_name}\n\n"
-            f"Спасибо за честность! 🎉",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        try:
-            text = (
-                f"💰 *Долг возвращен!*\n\n"
-                f"👤 {debtor_name} вернул вам долг:\n"
-                f"{category} {description}\n"
-                f"💵 Сумма: *{Utils.format_amount(amount, trip['currency'])}*\n\n"
-                f"Поездка: {trip['name']}"
-            )
-            
-            await context.bot.send_message(
-                chat_id=creditor_id,
-                text=text,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except Exception as e:
-            logger.error(f"Failed to notify creditor: {e}")
-        
-        try:
-            summary_text = Utils.format_summary(chat_id)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"✅ {debtor_name} вернул долг {creditor_name}\n\n{summary_text}",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except Exception as e:
-            logger.error(f"Failed to update group: {e}")
-    
-    # ============ CALLBACK HANDLERS ============
-    
-    async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Общий обработчик callback'ов"""
-        query = update.callback_query
-        data = query.data
-        
-        if data == "dm_back":
-            return await self.show_dm_cabinet(update, context)
-        
-        elif data == "dm_debts":
-            return await self.show_debts_dm(update, context)
-        
-        elif data == "dm_history":
-            return await self.show_history_dm(update, context)
-        
-        elif data == "dm_notifications":
-            return await self.show_notifications_settings(update, context)
-        
-        elif data == "dm_settings":
-            return await self.show_settings(update, context)
-        
-        elif data == "dm_switch_trip":
-            return await self.show_trip_switch(update, context)
-        
-        elif data.startswith("switch_trip_"):
-            return await self.switch_active_trip(update, context)
-        
-        elif data == "debts_i_owe":
-            return await self.show_i_owe(update, context)
-        
-        elif data == "debts_owe_me":
-            return await self.show_owe_me(update, context)
-        
-        elif data == "debts_refresh":
-            return await self.show_debts_dm(update, context)
-        
-        elif data.startswith("show_debt_"):
-            return await self.show_debt_detail(update, context)
-        
-        elif data.startswith("pay_debt_"):
-            return await self.pay_debt(update, context)
-        
-        elif data == "add_expense":
-            return await self.start_debt_flow(update, context)
-        
-        elif data == "show_summary":
-            chat = query.message.chat
-            trip = Database.get_trip(chat.id)
-            if trip:
-                summary_text = Utils.format_summary(chat.id)
-                await query.edit_message_text(
-                    summary_text,
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
-                )
-            await query.answer()
-        
-        elif data == "show_participants":
-            await query.answer()
-            chat = query.message.chat
-            trip = Database.get_trip(chat.id)
-            if trip:
-                participants = Database.get_participants(chat.id)
-                text = f"👥 *Участники* ({len(participants)}):\n\n"
-                for p in participants:
-                    text += f"• {p['first_name']}"
-                    if p.get('username'):
-                        text += f" (@{p['username']})"
-                    text += "\n"
-                await query.edit_message_text(
-                    text,
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")
-                    ]])
-                )
-        
-        elif data == "back_to_menu":
-            await query.answer()
-            chat = query.message.chat
-            trip = Database.get_trip(chat.id)
-            if trip:
-                await query.edit_message_text(
-                    f"🎯 *{trip['name']}* — управление:",
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=Keyboards.main_group_menu()
-                )
-        
-        else:
-            await query.answer()
-    # ============ ОБРАБОТКА ТЕКСТА В ГРУППЕ ============
-    
-    async def expense_command_group(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /expense в группе - показываем кнопку ЛС"""
-        chat = update.effective_chat
-        user = update.effective_user
-        
-        # Автодобавление участника
-        Database.add_participant(
-            chat_id=chat.id,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name
-        )
-        Database.link_user_to_trip(user.id, chat.id)
-        
-        trip = Database.get_trip(chat.id)
-        if not trip:
-            await update.message.reply_text(
-                "❌ Поездка не найдена. Создайте её командой /newtrip"
-            )
-            return
-        
-        text = (
-            "➕ *Добавить долг*\n\n"
-            "Для удобства заполним долг в личном кабинете.\n"
-            "Нажмите кнопку ниже:"
-        )
-        
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.add_expense_dm_button(self.bot_username, chat.id)
-        )
-    
-    async def expense_command_dm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /expense в ЛС - запускаем ConversationHandler"""
-        return await self.start_debt_flow(update, context)
-    
-    async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        НОВЫЙ ОБРАБОТЧИК: Парсинг сообщения типа "2000 @user1 @user2 описание" в группе
-        Автоматически создаёт долг без ConversationHandler
-        """
-        text = update.message.text
-        chat = update.effective_chat
-        user = update.effective_user
-        
-        # Автодобавление участника
-        Database.add_participant(
-            chat_id=chat.id,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name
-        )
-        Database.link_user_to_trip(user.id, chat.id)
-        
-        trip = Database.get_trip(chat.id)
-        if not trip:
-            # Поездка не создана - игнорируем
-            return
-        
-        participants = Database.get_participants(chat.id)
-        parts = text.split()
-        
-        # Валидация суммы
-        is_valid, amount = Utils.validate_amount(parts[0])
-        if not is_valid:
-            sent = await update.message.reply_text(
-                f"❌ {amount}",
-                reply_to_message_id=update.message.message_id
-            )
-            # Удаляем через 5 секунд
-            await asyncio.sleep(5)
-            try:
-                await sent.delete()
-                await update.message.delete()
-            except:
-                pass
-            return
-        
-        # Парсим участников
-        mentioned_ids = Utils.parse_participants_from_text(text, participants)
-        
-        if len(mentioned_ids) < 1:
-            sent = await update.message.reply_text(
-                "❌ Укажите минимум 1 участника через @\n\n"
-                "Пример: `2000 @саша такси` (вы автоматически добавитесь как плательщик)",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_to_message_id=update.message.message_id
-            )
-            # Удаляем через 5 секунд
-            await asyncio.sleep(5)
-            try:
-                await sent.delete()
-                await update.message.delete()
-            except:
-                pass
-            return
-        
-        # ВАЖНО: Автор ВСЕГДА плательщик
-        payer_id = user.id
-        
-        # Добавляем автора в список участников, если его там нет
-        if payer_id not in mentioned_ids:
-            mentioned_ids.append(payer_id)
-        
-        # Извлекаем описание
-        description_parts = []
-        for part in parts[1:]:
-            if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
-                description_parts.append(part)
-        
-        description = ' '.join(description_parts) if description_parts else "Общий расход"
-        
-        # ИСПРАВЛЕННАЯ ЛОГИКА:
-        # Если "2000 @никита @саша", то:
-        # - Участники: [автор, никита, саша] = 3 человека
-        # - Долг делится на ВСЕХ участников: 2000 / 3 = 666.67 на человека
-        # - Должники = ВСЕ КРОМЕ плательщика
-        
-        debt_result = Database.create_debt(
-            chat_id=chat.id,
-            amount=amount,
-            payer_id=payer_id,
-            participants=mentioned_ids,  # ВСЕ участники (включая плательщика)
-            description=description,
-            category='💸'
-        )
-        
-        if not debt_result:
-            await update.message.reply_text(
-                "❌ Ошибка создания долга",
-                reply_to_message_id=update.message.message_id
-            )
-            return
-        
-        # Формируем ответ
-        debtors = [p for p in mentioned_ids if p != payer_id]
-        amount_per_person = amount / len(mentioned_ids)  # ИСПРАВЛЕНО: делим на ВСЕХ участников
-        
-        debtor_names = [Utils.get_participant_name(d, participants) for d in debtors]
-        payer_name = Utils.get_participant_name(payer_id, participants)
-        
-        response_text = (
-            f"✅ *Долг добавлен!*\n\n"
-            f"💸 *{description}*\n"
-            f"💰 Общая сумма: {Utils.format_amount(amount, trip['currency'])}\n"
-            f"👤 Заплатил: {payer_name}\n"
-            f"💳 Долг каждого: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
-            f"👥 Должники ({len(debtors)}): {', '.join(debtor_names)}"
-        )
-        
-        sent_response = await update.message.reply_text(
-            response_text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_to_message_id=update.message.message_id
-        )
-        
-        # Удаляем исходное сообщение и ответ через 10 секунд
-        await asyncio.sleep(10)
-        try:
-            await update.message.delete()
-            await sent_response.delete()
-        except:
-            pass
-        
-        # Обновляем сводку (она НЕ удаляется)
-        summary_text = Utils.format_summary(chat.id)
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=summary_text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
-        )
-        
-        # Отправляем уведомления
-        await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
-
-        
-        # Обновляем сводку
-        summary_text = Utils.format_summary(chat.id)
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=summary_text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
-        )
-        
-        # Отправляем уведомления
-        await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
