@@ -3,9 +3,9 @@ from config import CURRENCIES, EXPENSE_CATEGORIES
 
 
 class Keyboards:
-    """Класс для создания ]клавиатур"""
+    """Класс для создания клавиатур"""
     
-     @staticmethod
+    @staticmethod
     def main_group_menu():
         """Главное меню для группового чата"""
         keyboard = [
@@ -15,7 +15,6 @@ class Keyboards:
             [InlineKeyboardButton("🗑 Очистить сообщения бота", callback_data="clear_bot_messages")]
         ]
         return InlineKeyboardMarkup(keyboard)
-
     
     @staticmethod
     def create_trip_confirm():
@@ -42,17 +41,8 @@ class Keyboards:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def skip_or_cancel():
-        """Пропустить или отменить"""
-        keyboard = [
-            [InlineKeyboardButton("⏭ Пропустить", callback_data="skip")],
-            [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
     def dm_main_menu(show_switch_trip=False):
-        """Главное меню личного кабинета (ИСПРАВЛЕНО)"""
+        """Главное меню личного кабинета"""
         keyboard = [
             [InlineKeyboardButton("📌 Долги", callback_data="dm_debts")],
             [InlineKeyboardButton("🧾 История", callback_data="dm_history")],
