@@ -26,8 +26,8 @@ def main():
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Получаем username бота
-    bot_username = "TripSplitBot"  # Замените на реальный username вашего бота
+    # Username вашего бота (БЕЗ @)
+    bot_username = "dolgotripbot"
     
     # Инициализируем обработчики
     handlers = Handlers(bot_username)
@@ -39,7 +39,8 @@ def main():
         entry_points=[CommandHandler('newtrip', handlers.newtrip_command)],
         states={
             TRIP_NAME: [
-                CallbackQueryHandler(handlers.trip_create_confirm, pattern='^trip_create_confirm$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.trip_name_input),
+                CallbackQueryHandler(handlers.use_chat_name, pattern='^use_chat_name$'),
                 CallbackQueryHandler(handlers.trip_create_cancel, pattern='^trip_create_cancel$'),
             ],
             TRIP_CURRENCY: [
