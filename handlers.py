@@ -1283,3 +1283,238 @@ class Handlers:
         await query.edit_message_text("❌ Отменено")
         context.user_data.clear()
         return ConversationHandler.END
+    # ============ ВОЗВРАТ ДОЛГА ============
+    
+    async def show_debt_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать детали конкретного долга с кнопкой оплаты"""
+        query = update.callback_query
+        await query.answer()
+        
+        debt_id = query.data.split('_')[2]
+        
+        from firebase_admin import firestore
+        db_instance = firestore.client()
+        
+        debt_doc = db_instance.collection('debts').document(debt_id).get()
+        if not debt_doc.exists:
+            await query.edit_message_text("❌ Долг не найден")
+            return
+        
+        debt = debt_doc.to_dict()
+        chat_id = debt['chat_id']
+        trip = Database.get_trip(chat_id)
+        participants = Database.get_participants(chat_id)
+        
+        debt_group = db_instance.collection('debt_groups').document(debt['debt_group_id']).get()
+        if debt_group.exists:
+            group_data = debt_group.to_dict()
+            description = group_data.get('description', 'Долг')
+            category = group_data.get('category', '💸')
+        else:
+            description = "Долг"
+            category = "💸"
+        
+        creditor_name = Utils.get_participant_name(debt['creditor_id'], participants)
+        amount = Utils.format_amount(debt['amount'], trip['currency'])
+        
+        text = (
+            f"{category} *{description}*\n\n"
+            f"💰 Сумма: *{amount}*\n"
+            f"👤 Должен: {creditor_name}\n"
+            f"📅 Создан: {debt['created_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Вернули долг?"
+        )
+        
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.debt_pay_button(debt_id)
+        )
+    
+    async def pay_debt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Отметить долг как возвращенный"""
+        query = update.callback_query
+        await query.answer("✅ Долг отмечен как возвращенный!")
+        
+        debt_id = query.data.split('_')[2]
+        
+        debt_data = Database.mark_debt_paid(debt_id)
+        
+        if not debt_data:
+            await query.edit_message_text("❌ Ошибка при обновлении долга")
+            return
+        
+        chat_id = debt_data['chat_id']
+        creditor_id = debt_data['creditor_id']
+        debtor_id = debt_data['debtor_id']
+        amount = debt_data['amount']
+        
+        trip = Database.get_trip(chat_id)
+        participants = Database.get_participants(chat_id)
+        
+        debtor_name = Utils.get_participant_name(debtor_id, participants)
+        creditor_name = Utils.get_participant_name(creditor_id, participants)
+        
+        from firebase_admin import firestore
+        db_instance = firestore.client()
+        
+        debt_group = db_instance.collection('debt_groups').document(debt_data['debt_group_id']).get()
+        description = "Долг"
+        category = "💸"
+        if debt_group.exists:
+            group_data = debt_group.to_dict()
+            description = group_data.get('description', 'Долг')
+            category = group_data.get('category', '💸')
+        
+        await query.edit_message_text(
+            f"✅ *Долг возвращен!*\n\n"
+            f"{category} {description}\n"
+            f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
+            f"👤 Кредитор: {creditor_name}\n\n"
+            f"Спасибо за честность! 🎉",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        try:
+            text = (
+                f"💰 *Долг возвращен!*\n\n"
+                f"👤 {debtor_name} вернул вам долг:\n"
+                f"{category} {description}\n"
+                f"💵 Сумма: *{Utils.format_amount(amount, trip['currency'])}*\n\n"
+                f"Поездка: {trip['name']}"
+            )
+            
+            await context.bot.send_message(
+                chat_id=creditor_id,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify creditor: {e}")
+        
+        try:
+            summary_text = Utils.format_summary(chat_id)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ {debtor_name} вернул долг {creditor_name}\n\n{summary_text}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Failed to update group: {e}")
+    
+    # ============ CALLBACK HANDLERS ============
+    
+    async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Общий обработчик callback'ов"""
+        query = update.callback_query
+        data = query.data
+        
+        # Личный кабинет
+        if data == "dm_back":
+            return await self.show_dm_cabinet(update, context)
+        
+        elif data == "dm_debts":
+            return await self.show_debts_dm(update, context)
+        
+        elif data == "dm_history":
+            return await self.show_history_dm(update, context)
+        
+        elif data == "dm_notifications":
+            return await self.show_notifications_settings(update, context)
+        
+        elif data == "dm_settings":
+            return await self.show_settings(update, context)
+        
+        elif data == "dm_switch_trip":
+            return await self.show_trip_switch(update, context)
+        
+        elif data.startswith("switch_trip_"):
+            return await self.switch_active_trip(update, context)
+        
+        # Долги
+        elif data == "debts_i_owe":
+            return await self.show_i_owe(update, context)
+        
+        elif data == "debts_owe_me":
+            return await self.show_owe_me(update, context)
+        
+        elif data == "debts_refresh":
+            return await self.show_debts_dm(update, context)
+        
+        elif data.startswith("show_debt_"):
+            return await self.show_debt_detail(update, context)
+        
+        elif data.startswith("pay_debt_"):
+            return await self.pay_debt(update, context)
+        
+        # Добавление долга
+        elif data == "add_expense":
+            return await self.start_debt_flow(update, context)
+        
+        # Удаление поездки
+        elif data.startswith("confirm_delete_trip_"):
+            await query.answer()
+            chat_id = int(data.split('_')[3])
+            
+            # Удаляем все данные
+            success = Database.delete_trip_completely(chat_id)
+            
+            if success:
+                await query.edit_message_text(
+                    "✅ *Поездка удалена*\n\n"
+                    "Все долги, история и участники удалены из базы данных.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                await query.edit_message_text("❌ Ошибка удаления поездки")
+        
+        elif data == "cancel_delete_trip":
+            await query.answer()
+            await query.edit_message_text("❌ Удаление отменено")
+        
+        # Сводка и участники в группе
+        elif data == "show_summary":
+            chat = query.message.chat
+            trip = Database.get_trip(chat.id)
+            if trip:
+                summary_text = Utils.format_summary(chat.id)
+                await query.edit_message_text(
+                    summary_text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
+                )
+            await query.answer()
+        
+        elif data == "show_participants":
+            await query.answer()
+            chat = query.message.chat
+            trip = Database.get_trip(chat.id)
+            if trip:
+                participants = Database.get_participants(chat.id)
+                text = f"👥 *Участники* ({len(participants)}):\n\n"
+                for p in participants:
+                    text += f"• {p['first_name']}"
+                    if p.get('username'):
+                        text += f" (@{p['username']})"
+                    text += "\n"
+                await query.edit_message_text(
+                    text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")
+                    ]])
+                )
+        
+        elif data == "back_to_menu":
+            await query.answer()
+            chat = query.message.chat
+            trip = Database.get_trip(chat.id)
+            if trip:
+                await query.edit_message_text(
+                    f"🎯 *{trip['name']}* — управление:",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=Keyboards.main_group_menu()
+                )
+        
+        else:
+            await query.answer()
