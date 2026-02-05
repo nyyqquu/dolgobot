@@ -3,17 +3,19 @@ from config import CURRENCIES, EXPENSE_CATEGORIES
 
 
 class Keyboards:
-    """Класс для создания клавиатур"""
+    """Класс для создания ]клавиатур"""
     
-    @staticmethod
+      @staticmethod
     def main_group_menu():
         """Главное меню для группового чата"""
         keyboard = [
             [InlineKeyboardButton("➕ Добавить расход", callback_data="add_expense")],
             [InlineKeyboardButton("📌 Сводка долгов", callback_data="show_summary")],
             [InlineKeyboardButton("🧑‍🤝‍🧑 Участники", callback_data="show_participants")],
+            [InlineKeyboardButton("🗑 Очистить сообщения бота", callback_data="clear_bot_messages")]
         ]
         return InlineKeyboardMarkup(keyboard)
+
     
     @staticmethod
     def create_trip_confirm():
