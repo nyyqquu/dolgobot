@@ -46,17 +46,18 @@ class Utils:
                 data = debt_group.to_dict()
                 return {
                     'description': data.get('description', 'Без описания'),
-                    'category': data.get('category', '💸')
+                    'category': data.get('category', '💸'),
+                    'currency': data.get('currency', 'EUR')
                 }
         except Exception as e:
             logger.error(f"Error getting debt group info: {e}")
         
-        return {'description': 'Без описания', 'category': '💸'}
+        return {'description': 'Без описания', 'category': '💸', 'currency': 'EUR'}
     
     @staticmethod
     def format_summary(chat_id: int) -> str:
         """
-        Форматировать сводку долгов для группы
+        Форматировать сводку долгов для группы (с валютами)
         БЕЗ @ чтобы не спамить уведомлениями
         """
         trip = Database.get_trip(chat_id)
@@ -65,20 +66,31 @@ class Utils:
         
         summary = Database.get_debts_summary(chat_id)
         participants = Database.get_participants(chat_id)
-        currency = trip['currency']
         
         if not summary:
-            return f"📌 *Сводка долгов ({currency})*\n\n✅ Все долги погашены!\n\nОбновлено: {datetime.now().strftime('%H:%M')}"
+            return f"📌 *Сводка долгов*\n\n✅ Все долги погашены!\n\nОбновлено: {datetime.now().strftime('%H:%M')}"
         
-        text = f"📌 *Сводка долгов ({currency})*\n\n"
-        
+        # Группируем по валютам
+        by_currency = {}
         for debt_summary in summary:
-            debtor_name = Utils.get_participant_name(debt_summary['debtor_id'], participants, use_tag=False)
-            creditor_name = Utils.get_participant_name(debt_summary['creditor_id'], participants, use_tag=False)
-            amount = Utils.format_amount(debt_summary['total_amount'], currency)
-            text += f"{debtor_name} → {creditor_name}: *{amount}*\n"
+            currency = debt_summary.get('currency', trip['currency'])
+            if currency not in by_currency:
+                by_currency[currency] = []
+            by_currency[currency].append(debt_summary)
         
-        text += f"\nОбновлено: {datetime.now().strftime('%H:%M')}"
+        text = f"📌 *Сводка долгов*\n\n"
+        
+        # Выводим по каждой валюте
+        for currency, debts in by_currency.items():
+            text += f"💱 *{currency}:*\n"
+            for debt_summary in debts:
+                debtor_name = Utils.get_participant_name(debt_summary['debtor_id'], participants, use_tag=False)
+                creditor_name = Utils.get_participant_name(debt_summary['creditor_id'], participants, use_tag=False)
+                amount = Utils.format_amount(debt_summary['total_amount'], currency)
+                text += f"{debtor_name} → {creditor_name}: *{amount}*\n"
+            text += "\n"
+        
+        text += f"Обновлено: {datetime.now().strftime('%H:%M')}"
         return text
     
     @staticmethod
@@ -93,15 +105,15 @@ class Utils:
         
         my_debts = Database.get_my_debts(chat_id, user_id)
         participants = Database.get_participants(chat_id)
-        currency = trip['currency']
         
         if not my_debts:
             return "✅ У вас нет долгов!"
         
-        text = f"💰 *Мои долги ({currency}):*\n\n"
+        text = f"💰 *Мои долги:*\n\n"
         
         for debt in my_debts:
             creditor_name = Utils.get_participant_name(debt['creditor_id'], participants, use_tag=True)
+            currency = debt.get('currency', trip['currency'])
             amount = Utils.format_amount(debt['amount'], currency)
             
             group_info = debt.get('group_info', {})
@@ -111,8 +123,17 @@ class Utils:
             text += f"{category} *{description}*\n"
             text += f"Должен {creditor_name}: *{amount}*\n\n"
         
-        total = sum(d['amount'] for d in my_debts)
-        text += f"📊 Итого долгов: *{Utils.format_amount(total, currency)}*"
+        # Группируем итог по валютам
+        totals = {}
+        for d in my_debts:
+            currency = d.get('currency', trip['currency'])
+            if currency not in totals:
+                totals[currency] = 0
+            totals[currency] += d['amount']
+        
+        text += "📊 *Итого долгов:*\n"
+        for currency, total in totals.items():
+            text += f"• {Utils.format_amount(total, currency)}\n"
         
         return text
     
@@ -128,12 +149,11 @@ class Utils:
         
         debts_to_me = Database.get_debts_to_user(chat_id, user_id)
         participants = Database.get_participants(chat_id)
-        currency = trip['currency']
         
         if not debts_to_me:
             return "✅ Вам никто не должен!"
         
-        text = f"💵 *Мне должны ({currency}):*\n\n"
+        text = f"💵 *Мне должны:*\n\n"
         
         debts_by_debtor = {}
         for debt in debts_to_me:
@@ -144,9 +164,18 @@ class Utils:
         
         for debtor_id, debts in debts_by_debtor.items():
             debtor_name = Utils.get_participant_name(debtor_id, participants, use_tag=True)
-            total_from_debtor = sum(d['amount'] for d in debts)
             
-            text += f"*{debtor_name}:* {Utils.format_amount(total_from_debtor, currency)}\n"
+            # Группируем по валютам для каждого должника
+            totals = {}
+            for d in debts:
+                currency = d.get('currency', trip['currency'])
+                if currency not in totals:
+                    totals[currency] = 0
+                totals[currency] += d['amount']
+            
+            text += f"*{debtor_name}:*\n"
+            for currency, total in totals.items():
+                text += f"• {Utils.format_amount(total, currency)}\n"
             
             for debt in debts:
                 debt_info = Utils.get_debt_group_info(debt['debt_group_id'])
@@ -154,8 +183,17 @@ class Utils:
             
             text += "\n"
         
-        total = sum(d['amount'] for d in debts_to_me)
-        text += f"📊 Итого должны: *{Utils.format_amount(total, currency)}*"
+        # Общий итог по валютам
+        all_totals = {}
+        for d in debts_to_me:
+            currency = d.get('currency', trip['currency'])
+            if currency not in all_totals:
+                all_totals[currency] = 0
+            all_totals[currency] += d['amount']
+        
+        text += "📊 *Итого должны:*\n"
+        for currency, total in all_totals.items():
+            text += f"• {Utils.format_amount(total, currency)}\n"
         
         return text
     
@@ -172,7 +210,6 @@ class Utils:
         
         events = Database.get_history_events(chat_id)
         participants = Database.get_participants(chat_id)
-        currency = trip['currency']
         
         if not events:
             return "📝 *История операций*\n\nИстория пуста."
@@ -181,9 +218,9 @@ class Utils:
         
         for event in events:
             timestamp = event['timestamp'].strftime('%d.%m.%Y %H:%M')
+            currency = event.get('currency', trip['currency'])
             
             if event['type'] == 'debt_created':
-                # СОЗДАНИЕ ДОЛГА
                 payer_name = Utils.get_participant_name(event['payer_id'], participants, use_tag=False)
                 amount = Utils.format_amount(event['total_amount'], currency)
                 category = event.get('category', '💸')
@@ -196,7 +233,6 @@ class Utils:
                 text += f"🕐 {timestamp}\n\n"
             
             elif event['type'] == 'debt_paid':
-                # ПОГАШЕНИЕ ДОЛГА
                 debtor_name = Utils.get_participant_name(event['debtor_id'], participants, use_tag=False)
                 creditor_name = Utils.get_participant_name(event['creditor_id'], participants, use_tag=False)
                 amount = Utils.format_amount(event['amount'], currency)
