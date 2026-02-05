@@ -1476,6 +1476,46 @@ class Handlers:
         
         elif data == "dm_switch_trip":
             return await self.show_trip_switch(update, context)
+
+         elif data == "clear_bot_messages":
+            await query.answer()
+            chat = query.message.chat
+            
+            # Проверяем права
+            try:
+                member = await context.bot.get_chat_member(chat.id, query.from_user.id)
+                if member.status not in ['creator', 'administrator']:
+                    await query.answer("❌ Только админы могут использовать эту функцию", show_alert=True)
+                    return
+            except:
+                await query.answer("❌ Ошибка проверки прав", show_alert=True)
+                return
+            
+            await query.edit_message_text("🔄 Удаляю сообщения бота...")
+            
+            deleted_count = 0
+            try:
+                # Пытаемся удалить последние 100 сообщений
+                for i in range(1, 101):
+                    try:
+                        await context.bot.delete_message(chat.id, query.message.message_id - i)
+                        deleted_count += 1
+                        await asyncio.sleep(0.05)
+                    except:
+                        pass
+            except Exception as e:
+                logger.error(f"Error clearing messages: {e}")
+            
+            # Удаляем само сообщение о результате через 3 секунды
+            result_msg = await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"✅ Удалено сообщений: {deleted_count}"
+            )
+            await asyncio.sleep(3)
+            try:
+                await result_msg.delete()
+            except:
+                pass
         
         elif data.startswith("switch_trip_"):
             return await self.switch_active_trip(update, context)
