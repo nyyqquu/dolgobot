@@ -1,13 +1,33 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
-from config import FIREBASE_CREDENTIALS_PATH
 from datetime import datetime
 import logging
+import json
+import os
 
 logger = logging.getLogger(__name__)
 
 # Initialize Firebase
-cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+firebase_creds = os.getenv('FIREBASE_CREDENTIALS')
+
+if firebase_creds:
+    # Если переменная окружения существует (на Railway)
+    try:
+        cred_dict = json.loads(firebase_creds)
+        cred = credentials.Certificate(cred_dict)
+        logger.info("Firebase initialized from environment variable")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse FIREBASE_CREDENTIALS: {e}")
+        raise
+else:
+    # Локально из файла (для разработки)
+    try:
+        cred = credentials.Certificate('firebase_key.json')
+        logger.info("Firebase initialized from local file")
+    except FileNotFoundError:
+        logger.error("Firebase credentials not found. Set FIREBASE_CREDENTIALS environment variable.")
+        raise
+
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -78,7 +98,7 @@ class Database:
             'chat_id': chat_id,
             'amount': amount,
             'payer_id': payer_id,
-            'beneficiaries': beneficiaries,  # list of user_ids
+            'beneficiaries': beneficiaries,
             'comment': comment,
             'category': category,
             'created_at': datetime.now(),
@@ -168,7 +188,6 @@ class Database:
         if not participants:
             return {}
         
-        # Создаем словарь балансов
         balances = {p['user_id']: 0 for p in participants}
         
         for expense in expenses:
@@ -179,13 +198,9 @@ class Database:
             if not beneficiaries:
                 continue
             
-            # Сумма на человека
             per_person = amount / len(beneficiaries)
-            
-            # Плательщик получает деньги
             balances[payer_id] += amount
             
-            # Бенефициары должны заплатить
             for beneficiary_id in beneficiaries:
                 balances[beneficiary_id] -= per_person
         
@@ -196,13 +211,11 @@ class Database:
         """Получить упрощенные долги (кто кому сколько должен)"""
         balances = Database.calculate_balances(chat_id)
         
-        # Разделяем на должников и кредиторов
         debtors = {k: -v for k, v in balances.items() if v < -0.01}
         creditors = {k: v for k, v in balances.items() if v > 0.01}
         
         debts = []
         
-        # Простой алгоритм сведения долгов
         for debtor_id, debt_amount in sorted(debtors.items(), key=lambda x: x[1], reverse=True):
             for creditor_id, credit_amount in sorted(creditors.items(), key=lambda x: x[1], reverse=True):
                 if debt_amount < 0.01 or credit_amount < 0.01:
