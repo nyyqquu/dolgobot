@@ -789,12 +789,14 @@ class Handlers:
             return
         
         participants = Database.get_participants(chat.id)
-        parts = text.split()
         
-        is_valid, amount = Utils.validate_amount(parts[0])
-        if not is_valid:
+        # НОВОЕ: Парсим валюту
+        amount, currency, remaining_text = Utils.parse_currency_from_text(text)
+        
+        if amount is None:
             sent = await update.message.reply_text(
-                f"❌ {amount}",
+                "❌ Неверный формат. Используйте:\n`2000 @user описание` или\n`2000 THB @user описание`",
+                parse_mode=ParseMode.MARKDOWN,
                 reply_to_message_id=update.message.message_id
             )
             await asyncio.sleep(5)
@@ -805,7 +807,11 @@ class Handlers:
                 pass
             return
         
-        mentioned_ids = Utils.parse_participants_from_text(text, participants)
+        # Если валюта не указана, берем из поездки
+        if currency is None:
+            currency = trip['currency']
+        
+        mentioned_ids = Utils.parse_participants_from_text(remaining_text, participants)
         
         payer_id = user.id
         
@@ -826,8 +832,9 @@ class Handlers:
                 pass
             return
         
+        # Парсим описание (всё что не @ и не имена)
         description_parts = []
-        for part in parts[1:]:
+        for part in remaining_text.split():
             if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
                 description_parts.append(part)
         
@@ -839,7 +846,8 @@ class Handlers:
             payer_id=payer_id,
             participants=mentioned_ids,
             description=description,
-            category='💸'
+            category='💸',
+            currency=currency  # ПЕРЕДАЁМ ВАЛЮТУ!
         )
         
         if not debt_result:
@@ -864,9 +872,9 @@ class Handlers:
         response_text = (
             f"✅ *Долг добавлен!*\n\n"
             f"💸 *{description}*\n"
-            f"💰 Общая сумма: {Utils.format_amount(amount, trip['currency'])}\n"
+            f"💰 Общая сумма: {Utils.format_amount(amount, currency)}\n"
             f"👤 Заплатил: {payer_name}\n"
-            f"💳 Долг каждого: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
+            f"💳 Долг каждого: {Utils.format_amount(amount_per_person, currency)}\n\n"
             f"👥 Должники ({len(debtors)}): {', '.join(debtor_names)}"
         )
         
