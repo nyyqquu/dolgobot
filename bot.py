@@ -29,11 +29,9 @@ def main():
     """Запуск бота"""
     logger.info("Starting TripSplit Bot...")
     
-    # Создание приложения
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Получаем username бота (будет установлен в post_init)
-    bot_username = "dolgotripbot"  # fallback
+    bot_username = "dolgotripbot"
     
     handlers = Handlers(bot_username)
     
@@ -64,6 +62,7 @@ def main():
     
     application.add_handler(CommandHandler('start', handlers.start_command))
     application.add_handler(CommandHandler('help', handlers.help_command))
+    application.add_handler(CommandHandler('join', handlers.join_trip_command, filters=filters.ChatType.GROUPS))
     application.add_handler(CommandHandler('summary', handlers.summary_command))
     application.add_handler(CommandHandler('participants', handlers.participants_command))
     application.add_handler(CommandHandler('deletetrip', handlers.delete_trip_command, filters=filters.ChatType.GROUPS))
@@ -75,32 +74,28 @@ def main():
     
     # ============ CALLBACK HANDLERS ============
     
-    # Специфичные callback'и (обрабатываются первыми)
     application.add_handler(CallbackQueryHandler(
         handlers.update_notification_settings, 
         pattern='^notif_'
     ))
     
-    # Общий обработчик callback'ов (должен быть последним)
     application.add_handler(CallbackQueryHandler(handlers.callback_handler))
     
     # ============ TEXT HANDLERS ============
     
-    # ВАЖНО: Порядок имеет значение! От специфичного к общему
-    
-    # 1. Обработчик долгов в ГРУППЕ (начинается с цифры)
+    # Обработчик долгов в ГРУППЕ (начинается с цифры)
     application.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.GROUPS & ~filters.COMMAND & filters.Regex(r'^\d+'),
         handlers.handle_group_expense_text
     ))
     
-    # 2. Обработчик обычных сообщений в группе (для автодобавления участников)
+    # Обработчик обычных сообщений в группе
     application.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.GROUPS & ~filters.COMMAND,
         handlers.handle_group_message
     ))
     
-    # 3. Обработчик сообщений в ЛС (показывает кабинет)
+    # Обработчик сообщений в ЛС
     application.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
         handlers.handle_private_message
@@ -133,7 +128,7 @@ def main():
     try:
         application.run_polling(
             allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True  # Игнорировать старые обновления при перезапуске
+            drop_pending_updates=True
         )
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
