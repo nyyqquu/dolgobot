@@ -60,7 +60,7 @@ class Keyboards:
         ]
         return InlineKeyboardMarkup(keyboard)
     
-       @staticmethod
+    @staticmethod
     def debts_tabs():
         """Вкладки долгов"""
         keyboard = [
@@ -72,7 +72,6 @@ class Keyboards:
             [InlineKeyboardButton("🔙 Назад", callback_data="dm_back")]
         ]
         return InlineKeyboardMarkup(keyboard)
-
     
     @staticmethod
     def participant_selection(participants, selected_ids=None):
@@ -155,9 +154,7 @@ class Keyboards:
     def notification_settings(current_type):
         """Настройки уведомлений"""
         options = [
-            ("balance_only", "✅ Только изменения баланса"),
-            ("all_expenses", "✅ Все расходы"),
-            ("daily_digest", "✅ Дайджест раз в день"),
+            ("all", "✅ Все уведомления"),
             ("off", "❌ Выключить")
         ]
         
@@ -238,8 +235,9 @@ class Keyboards:
             )]
         ]
         return InlineKeyboardMarkup(keyboard)
+    
     @staticmethod
-    def debt_pay_button(debt_id: str):
+    def debt_pay_button(debt_id):
         """Кнопка оплаты долга"""
         keyboard = [
             [InlineKeyboardButton("✅ Вернул долг", callback_data=f"pay_debt_{debt_id}")],
@@ -248,13 +246,13 @@ class Keyboards:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def my_debts_list(debts: list):
+    def my_debts_list(debts):
         """Список моих долгов с кнопками оплаты"""
         keyboard = []
         
         for debt in debts:
             group_info = debt.get('group_info', {})
-            description = group_info.get('description', 'Долг')[:30]  # Обрезаем если длинное
+            description = group_info.get('description', 'Долг')[:30]
             category = group_info.get('category', '💸')
             
             keyboard.append([
