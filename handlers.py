@@ -1054,7 +1054,7 @@ class Handlers:
     
     # ============ CALLBACK HANDLERS ============
     
-    async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+       async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Общий обработчик callback'ов"""
         query = update.callback_query
         data = query.data
@@ -1070,9 +1070,6 @@ class Handlers:
         
         elif data == "dm_notifications":
             return await self.show_notifications_settings(update, context)
-        
-        elif data == "dm_settings":
-            return await self.show_settings(update, context)
         
         elif data == "dm_switch_trip":
             return await self.show_trip_switch(update, context)
@@ -1094,6 +1091,29 @@ class Handlers:
         
         elif data.startswith("pay_debt_"):
             return await self.pay_debt(update, context)
+        
+        elif data == "show_add_expense_info":
+            await query.answer()
+            chat = query.message.chat
+            trip = Database.get_trip(chat.id)
+            if trip:
+                text = (
+                    "➕ *Как добавить долг:*\n\n"
+                    "Просто напишите в чат:\n"
+                    "`сумма @участник1 @участник2 описание`\n\n"
+                    "💡 *Примеры:*\n"
+                    "`2000 @никита @саша такси`\n"
+                    "`500 @катя кофе`\n"
+                    "`15000 @петя @маша @иван отель`\n\n"
+                    "Вы автоматически становитесь плательщиком!"
+                )
+                await query.edit_message_text(
+                    text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🔙 На главную", callback_data="back_to_menu")
+                    ]])
+                )
         
         elif data.startswith("confirm_delete_trip_"):
             await query.answer()
