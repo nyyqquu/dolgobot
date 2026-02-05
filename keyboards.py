@@ -7,8 +7,9 @@ class Keyboards:
     
     @staticmethod
     def main_group_menu():
-        """Главное меню для группового чата"""
+        """Главное меню для группового чата (ИСПРАВЛЕНО: вернул кнопку Добавить долг)"""
         keyboard = [
+            [InlineKeyboardButton("➕ Добавить долг", callback_data="show_add_expense_info")],
             [InlineKeyboardButton("📌 Сводка долгов", callback_data="show_summary")],
             [InlineKeyboardButton("🧑‍🤝‍🧑 Участники", callback_data="show_participants")],
             [InlineKeyboardButton("🗑 Очистить сообщения бота", callback_data="clear_bot_messages")]
@@ -32,7 +33,7 @@ class Keyboards:
     
     @staticmethod
     def dm_main_menu(show_switch_trip=False):
-        """Главное меню личного кабинета"""
+        """Главное меню личного кабинета (ИСПРАВЛЕНО: убрал Настройки, добавил Очистить)"""
         keyboard = [
             [InlineKeyboardButton("📌 Долги", callback_data="dm_debts")],
             [InlineKeyboardButton("🧾 История", callback_data="dm_history")],
@@ -42,7 +43,6 @@ class Keyboards:
             keyboard.append([InlineKeyboardButton("🔄 Сменить поездку", callback_data="dm_switch_trip")])
         
         keyboard.append([InlineKeyboardButton("🔔 Уведомления", callback_data="dm_notifications")])
-        keyboard.append([InlineKeyboardButton("⚙️ Настройки", callback_data="dm_settings")])
         
         return InlineKeyboardMarkup(keyboard)
     
@@ -93,7 +93,7 @@ class Keyboards:
     
     @staticmethod
     def summary_actions(bot_username, chat_id):
-        """Действия под сводкой (ИСПРАВЛЕНО: добавлена кнопка "На главную")"""
+        """Действия под сводкой"""
         keyboard = [
             [InlineKeyboardButton("🔄 Обновить", callback_data="show_summary")],
             [
@@ -122,7 +122,7 @@ class Keyboards:
     
     @staticmethod
     def my_debts_list(debts):
-        """Список моих долгов с кнопками оплаты (БЕЗ ОТОБРАЖЕНИЯ СУММЫ В КНОПКЕ)"""
+        """Список моих долгов с кнопками оплаты"""
         keyboard = []
         
         for debt in debts:
