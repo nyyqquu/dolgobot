@@ -145,7 +145,8 @@ class Handlers:
             "*В личном кабинете:*\n"
             "📌 Долги — посмотреть свои долги\n"
             "🧾 История — все долги поездки\n"
-            "✅ Вернул долг — отметить возврат"
+            "✅ Вернул долг — отметить возврат\n"
+            "✅ Подтвердить возврат — если вам вернули долг"
         )
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
@@ -324,7 +325,8 @@ class Handlers:
         
         text = (
             f"✅ Поездка *{trip['name']}* ({currency}) создана!\n\n"
-            f"⚠️ *Важно:* Все участники должны написать /join\n\n"
+            f"👥 Участники добавляются автоматически\n"
+            f"💡 Или используйте /join для быстрого добавления\n\n"
             f"💸 *Добавление долгов:*\n"
             f"`2000 @user описание` — валюта {currency}\n"
             f"`2000 THB @user такси` — другая валюта\n\n"
@@ -685,7 +687,7 @@ class Handlers:
         )
     
     async def show_owe_me(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать кто мне должен"""
+        """Показать кто мне должен (С КНОПКАМИ!)"""
         query = update.callback_query
         await query.answer()
         
@@ -696,12 +698,33 @@ class Handlers:
             await query.edit_message_text("❌ Активная поездка не найдена")
             return
         
+        debts_to_me = Database.get_debts_to_user(chat_id, user.id)
+        
+        if not debts_to_me:
+            text = "✅ Вам никто не должен!"
+            await query.edit_message_text(
+                text,
+                reply_markup=Keyboards.debts_tabs()
+            )
+            return
+        
+        # Добавляем group_info к каждому долгу
+        for debt in debts_to_me:
+            try:
+                from firebase_admin import firestore
+                db_instance = firestore.client()
+                debt_group = db_instance.collection('debt_groups').document(debt['debt_group_id']).get()
+                if debt_group.exists:
+                    debt['group_info'] = debt_group.to_dict()
+            except:
+                debt['group_info'] = {'description': 'Долг', 'category': '💸'}
+        
         text = Utils.format_debts_to_me(chat_id, user.id)
         
         await query.edit_message_text(
             text,
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.debts_tabs()
+            reply_markup=Keyboards.debts_to_me_list(debts_to_me)
         )
     
     async def show_history_dm(self, update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int = None):
@@ -953,7 +976,7 @@ class Handlers:
             logger.error(f"Failed to send notification to payer {payer_id}: {e}")
     
     async def show_debt_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать детали конкретного долга с кнопкой оплаты"""
+        """Показать детали конкретного долга с кнопкой оплаты (ДЛЯ ДОЛЖНИКА)"""
         query = update.callback_query
         await query.answer()
         
@@ -1000,8 +1023,56 @@ class Handlers:
             reply_markup=Keyboards.debt_pay_button(debt_id)
         )
     
+    async def show_debt_detail_creditor(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать детали долга для КРЕДИТОРА с кнопкой подтверждения"""
+        query = update.callback_query
+        await query.answer()
+        
+        debt_id = query.data.split('_')[3]
+        
+        from firebase_admin import firestore
+        db_instance = firestore.client()
+        
+        debt_doc = db_instance.collection('debts').document(debt_id).get()
+        if not debt_doc.exists:
+            await query.edit_message_text("❌ Долг не найден")
+            return
+        
+        debt = debt_doc.to_dict()
+        chat_id = debt['chat_id']
+        trip = Database.get_trip(chat_id)
+        participants = Database.get_participants(chat_id)
+        
+        debt_group = db_instance.collection('debt_groups').document(debt['debt_group_id']).get()
+        if debt_group.exists:
+            group_data = debt_group.to_dict()
+            description = group_data.get('description', 'Долг')
+            category = group_data.get('category', '💸')
+            currency = group_data.get('currency', trip['currency'])
+        else:
+            description = "Долг"
+            category = "💸"
+            currency = trip['currency']
+        
+        debtor_name = Utils.get_participant_name(debt['debtor_id'], participants)
+        amount = Utils.format_amount(debt['amount'], currency)
+        
+        text = (
+            f"{category} *{description}*\n\n"
+            f"💰 Сумма: *{amount}*\n"
+            f"👤 Должник: {debtor_name}\n"
+            f"📅 Создан: {debt['created_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Должник вернул вам деньги?"
+        )
+        
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.debt_confirm_button(debt_id)
+        )
+    
     async def pay_debt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отметить долг как возвращенный"""
+        """Отметить долг как возвращенный (ДОЛЖНИК НАЖАЛ)"""
         query = update.callback_query
         await query.answer("✅ Долг отмечен как возвращенный!")
         
@@ -1073,6 +1144,78 @@ class Handlers:
         except Exception as e:
             logger.error(f"Failed to update group: {e}")
     
+    async def confirm_debt_return(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Кредитор подтверждает возврат долга"""
+        query = update.callback_query
+        await query.answer("✅ Возврат подтверждён!")
+        
+        debt_id = query.data.split('_')[2]
+        
+        debt_data = Database.mark_debt_paid(debt_id)
+        
+        if not debt_data:
+            await query.edit_message_text("❌ Ошибка при обновлении долга")
+            return
+        
+        chat_id = debt_data['chat_id']
+        creditor_id = debt_data['creditor_id']
+        debtor_id = debt_data['debtor_id']
+        amount = debt_data['amount']
+        
+        trip = Database.get_trip(chat_id)
+        participants = Database.get_participants(chat_id)
+        
+        debtor_name = Utils.get_participant_name(debtor_id, participants)
+        creditor_name = Utils.get_participant_name(creditor_id, participants)
+        
+        from firebase_admin import firestore
+        db_instance = firestore.client()
+        
+        debt_group = db_instance.collection('debt_groups').document(debt_data['debt_group_id']).get()
+        description = "Долг"
+        category = "💸"
+        currency = trip['currency']
+        if debt_group.exists:
+            group_data = debt_group.to_dict()
+            description = group_data.get('description', 'Долг')
+            category = group_data.get('category', '💸')
+            currency = group_data.get('currency', trip['currency'])
+        
+        await query.edit_message_text(
+            f"✅ *Возврат подтверждён!*\n\n"
+            f"{category} {description}\n"
+            f"💰 Сумма: {Utils.format_amount(amount, currency)}\n"
+            f"👤 Должник: {debtor_name}\n\n"
+            f"Спасибо за подтверждение! 🎉",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        try:
+            text = (
+                f"✅ *{creditor_name} подтвердил возврат долга*\n\n"
+                f"{category} {description}\n"
+                f"💵 Сумма: *{Utils.format_amount(amount, currency)}*\n\n"
+                f"Поездка: {trip['name']}"
+            )
+            
+            await context.bot.send_message(
+                chat_id=debtor_id,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify debtor: {e}")
+        
+        try:
+            summary_text = Utils.format_summary(chat_id)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ {creditor_name} подтвердил возврат от {debtor_name}\n\n{summary_text}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Failed to update group: {e}")
+    
     async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Общий обработчик callback'ов"""
         query = update.callback_query
@@ -1104,6 +1247,12 @@ class Handlers:
         
         elif data == "debts_refresh":
             return await self.show_debts_dm(update, context)
+        
+        elif data.startswith("show_debt_creditor_"):
+            return await self.show_debt_detail_creditor(update, context)
+        
+        elif data.startswith("confirm_debt_"):
+            return await self.confirm_debt_return(update, context)
         
         elif data.startswith("show_debt_"):
             return await self.show_debt_detail(update, context)
