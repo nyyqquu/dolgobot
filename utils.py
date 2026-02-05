@@ -274,6 +274,40 @@ class Utils:
             return False, "Введите корректную сумму (например: 1250 или 1250.50)"
     
     @staticmethod
+    def parse_currency_from_text(text: str) -> tuple:
+        """
+        Извлечь валюту из текста
+        
+        Примеры:
+        "2000 THB @user описание" -> (2000, "THB", "@user описание")
+        "2000 @user описание" -> (2000, None, "@user описание")
+        
+        Возвращает: (amount, currency or None, remaining_text)
+        """
+        from config import CURRENCIES
+        
+        parts = text.split()
+        if len(parts) < 2:
+            return (None, None, text)
+        
+        # Проверяем первое слово - это сумма
+        try:
+            amount_str = parts[0].replace(',', '.')
+            amount = float(amount_str)
+        except ValueError:
+            return (None, None, text)
+        
+        # Проверяем второе слово - это валюта?
+        if len(parts) >= 2 and parts[1].upper() in CURRENCIES:
+            currency = parts[1].upper()
+            remaining_text = ' '.join(parts[2:])
+            return (amount, currency, remaining_text)
+        else:
+            # Валюты нет, берём всё после суммы
+            remaining_text = ' '.join(parts[1:])
+            return (amount, None, remaining_text)
+    
+    @staticmethod
     def parse_participants_from_text(text: str, all_participants: list) -> list:
         """
         Извлечь участников из текста по @username или имени
