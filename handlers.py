@@ -5,6 +5,10 @@ from database import Database
 from keyboards import Keyboards
 from utils import Utils
 import logging
+import asyncio  # ДОБАВИТЬ ЭТУ СТРОКУ
+
+logger = logging.getLogger(__name__)
+
 
 logger = logging.getLogger(__name__)
 
@@ -306,30 +310,20 @@ class Handlers:
         )
         Database.link_user_to_trip(user.id, chat.id)
         
-        participants_text = f"👥 Участники будут добавляться автоматически при взаимодействии с ботом"
-        
+        # ОДНО СООБЩЕНИЕ ВМЕСТО ТРЁХ
         text = (
             f"✅ Поездка *{trip['name']}* ({currency}) создана!\n\n"
-            f"{participants_text}\n\n"
-            "📱 Следующие шаги:\n"
-            "1. Откройте личный кабинет (кнопка ниже)\n"
-            "2. Добавьте первый долг\n"
-            "3. Следите за долгами в сводке"
+            f"👥 Участники добавляются автоматически\n\n"
+            f"Управление поездкой:"
         )
         
         await query.edit_message_text(
             text,
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.open_dm_button(self.bot_username)
-        )
-        
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=f"🎯 *{trip['name']}* — управление:",
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.main_group_menu()
         )
         
+        # Отправляем ТОЛЬКО сводку долгов
         summary_text = f"📌 *Сводка долгов ({currency})*\n\n✅ Пока долгов нет"
         await context.bot.send_message(
             chat_id=chat.id,
@@ -339,14 +333,7 @@ class Handlers:
         )
         
         return ConversationHandler.END
-    
-    async def trip_create_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отмена создания поездки"""
-        query = update.callback_query
-        await query.answer()
-        
-        await query.edit_message_text("❌ Создание поездки отменено.")
-        return ConversationHandler.END
+
     
     async def summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать сводку долгов"""
@@ -1365,27 +1352,44 @@ class Handlers:
         # Валидация суммы
         is_valid, amount = Utils.validate_amount(parts[0])
         if not is_valid:
-            await update.message.reply_text(
+            sent = await update.message.reply_text(
                 f"❌ {amount}",
                 reply_to_message_id=update.message.message_id
             )
+            # Удаляем через 5 секунд
+            await asyncio.sleep(5)
+            try:
+                await sent.delete()
+                await update.message.delete()
+            except:
+                pass
             return
         
         # Парсим участников
         mentioned_ids = Utils.parse_participants_from_text(text, participants)
         
-        if len(mentioned_ids) < 2:
-            await update.message.reply_text(
-                "❌ Укажите минимум 2 участников через @\n\n"
-                "Пример: `2000 @никита @саша такси`",
+        if len(mentioned_ids) < 1:
+            sent = await update.message.reply_text(
+                "❌ Укажите минимум 1 участника через @\n\n"
+                "Пример: `2000 @саша такси` (вы автоматически добавитесь как плательщик)",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_to_message_id=update.message.message_id
             )
+            # Удаляем через 5 секунд
+            await asyncio.sleep(5)
+            try:
+                await sent.delete()
+                await update.message.delete()
+            except:
+                pass
             return
         
-        # Добавляем автора как плательщика, если его нет в списке
-        if user.id not in mentioned_ids:
-            mentioned_ids.append(user.id)
+        # ВАЖНО: Автор ВСЕГДА плательщик
+        payer_id = user.id
+        
+        # Добавляем автора в список участников, если его там нет
+        if payer_id not in mentioned_ids:
+            mentioned_ids.append(payer_id)
         
         # Извлекаем описание
         description_parts = []
@@ -1395,14 +1399,17 @@ class Handlers:
         
         description = ' '.join(description_parts) if description_parts else "Общий расход"
         
-        # Создаём долг (автор = плательщик)
-        payer_id = user.id
+        # ИСПРАВЛЕННАЯ ЛОГИКА:
+        # Если "2000 @никита @саша", то:
+        # - Участники: [автор, никита, саша] = 3 человека
+        # - Долг делится на ВСЕХ участников: 2000 / 3 = 666.67 на человека
+        # - Должники = ВСЕ КРОМЕ плательщика
         
         debt_result = Database.create_debt(
             chat_id=chat.id,
             amount=amount,
             payer_id=payer_id,
-            participants=mentioned_ids,
+            participants=mentioned_ids,  # ВСЕ участники (включая плательщика)
             description=description,
             category='💸'
         )
@@ -1416,7 +1423,7 @@ class Handlers:
         
         # Формируем ответ
         debtors = [p for p in mentioned_ids if p != payer_id]
-        amount_per_person = amount / len(debtors)
+        amount_per_person = amount / len(mentioned_ids)  # ИСПРАВЛЕНО: делим на ВСЕХ участников
         
         debtor_names = [Utils.get_participant_name(d, participants) for d in debtors]
         payer_name = Utils.get_participant_name(payer_id, participants)
@@ -1424,17 +1431,38 @@ class Handlers:
         response_text = (
             f"✅ *Долг добавлен!*\n\n"
             f"💸 *{description}*\n"
-            f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
+            f"💰 Общая сумма: {Utils.format_amount(amount, trip['currency'])}\n"
             f"👤 Заплатил: {payer_name}\n"
-            f"💳 Должны по: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
-            f"👥 Должники: {', '.join(debtor_names)}"
+            f"💳 Долг каждого: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
+            f"👥 Должники ({len(debtors)}): {', '.join(debtor_names)}"
         )
         
-        await update.message.reply_text(
+        sent_response = await update.message.reply_text(
             response_text,
             parse_mode=ParseMode.MARKDOWN,
             reply_to_message_id=update.message.message_id
         )
+        
+        # Удаляем исходное сообщение и ответ через 10 секунд
+        await asyncio.sleep(10)
+        try:
+            await update.message.delete()
+            await sent_response.delete()
+        except:
+            pass
+        
+        # Обновляем сводку (она НЕ удаляется)
+        summary_text = Utils.format_summary(chat.id)
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=summary_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
+        )
+        
+        # Отправляем уведомления
+        await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
+
         
         # Обновляем сводку
         summary_text = Utils.format_summary(chat.id)
