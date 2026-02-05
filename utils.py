@@ -14,16 +14,20 @@ class Utils:
         return f"{amount:.2f} {currency}"
     
     @staticmethod
-    def get_participant_name(user_id: int, participants: list) -> str:
+    def get_participant_name(user_id: int, participants: list, use_tag: bool = True) -> str:
         """
         Получить имя участника по ID
-        ПРИОРИТЕТ: @username > first_name
+        
+        use_tag=True:  @username (для ЛС, кнопок, прямого взаимодействия)
+        use_tag=False: username без @ (для сводок, чтобы не спамить)
         """
         for p in participants:
             if p['user_id'] == user_id:
-                # ПРИОРИТЕТ: @username, если есть
                 if p.get('username'):
-                    return f"@{p['username']}"
+                    if use_tag:
+                        return f"@{p['username']}"
+                    else:
+                        return p['username']  # БЕЗ @
                 return p['first_name']
         return "Неизвестный"
     
@@ -51,7 +55,10 @@ class Utils:
     
     @staticmethod
     def format_summary(chat_id: int) -> str:
-        """Форматировать сводку долгов для группы"""
+        """
+        Форматировать сводку долгов для группы
+        БЕЗ @ чтобы не спамить уведомлениями
+        """
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -66,8 +73,9 @@ class Utils:
         text = f"📌 *Сводка долгов ({currency})*\n\n"
         
         for debt_summary in summary:
-            debtor_name = Utils.get_participant_name(debt_summary['debtor_id'], participants)
-            creditor_name = Utils.get_participant_name(debt_summary['creditor_id'], participants)
+            # БЕЗ @ чтобы не спамить в группе
+            debtor_name = Utils.get_participant_name(debt_summary['debtor_id'], participants, use_tag=False)
+            creditor_name = Utils.get_participant_name(debt_summary['creditor_id'], participants, use_tag=False)
             amount = Utils.format_amount(debt_summary['total_amount'], currency)
             text += f"{debtor_name} → {creditor_name}: *{amount}*\n"
         
@@ -78,7 +86,7 @@ class Utils:
     def format_my_debts(chat_id: int, user_id: int) -> str:
         """
         Форматировать мои долги (что я должен)
-        БЕЗ ПОКАЗА ID долгов
+        С @ потому что это ЛС — можно кликнуть и написать
         """
         trip = Database.get_trip(chat_id)
         if not trip:
@@ -94,7 +102,8 @@ class Utils:
         text = f"💰 *Мои долги ({currency}):*\n\n"
         
         for debt in my_debts:
-            creditor_name = Utils.get_participant_name(debt['creditor_id'], participants)
+            # С @ потому что в ЛС — удобно кликнуть
+            creditor_name = Utils.get_participant_name(debt['creditor_id'], participants, use_tag=True)
             amount = Utils.format_amount(debt['amount'], currency)
             
             group_info = debt.get('group_info', {})
@@ -113,7 +122,7 @@ class Utils:
     def format_debts_to_me(chat_id: int, user_id: int) -> str:
         """
         Форматировать долги мне (кто мне должен)
-        Группировка по должникам
+        С @ потому что это ЛС
         """
         trip = Database.get_trip(chat_id)
         if not trip:
@@ -138,7 +147,8 @@ class Utils:
         
         # Вывод по каждому должнику
         for debtor_id, debts in debts_by_debtor.items():
-            debtor_name = Utils.get_participant_name(debtor_id, participants)
+            # С @ потому что в ЛС
+            debtor_name = Utils.get_participant_name(debtor_id, participants, use_tag=True)
             total_from_debtor = sum(d['amount'] for d in debts)
             
             text += f"*{debtor_name}:* {Utils.format_amount(total_from_debtor, currency)}\n"
@@ -157,26 +167,28 @@ class Utils:
         return text
     
     @staticmethod
-    def format_history(chat_id: int, limit: int = 10) -> str:
+    def format_history(chat_id: int, limit: int = 20) -> str:
         """
-        Форматировать историю долгов
-        limit: количество последних записей
+        Форматировать историю долгов (ВСЕ долги, включая погашенные)
+        БЕЗ @ чтобы не спамить
         """
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
         
-        debt_groups = Database.get_debt_groups(chat_id)[:limit]
+        # Получаем ВСЕ debt_groups (и активные, и с погашенными долгами)
+        debt_groups = Database.get_all_debt_groups(chat_id, limit=limit)
         participants = Database.get_participants(chat_id)
         currency = trip['currency']
         
         if not debt_groups:
-            return "📝 История долгов пуста"
+            return "📝 *История долгов*\n\nИстория пуста."
         
         text = f"🧾 *История долгов*\n\n"
         
         for dg in debt_groups:
-            payer_name = Utils.get_participant_name(dg['payer_id'], participants)
+            # БЕЗ @ в истории
+            payer_name = Utils.get_participant_name(dg['payer_id'], participants, use_tag=False)
             amount = Utils.format_amount(dg['total_amount'], currency)
             description = dg.get('description', 'Без описания')
             category = dg.get('category', '💸')
