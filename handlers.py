@@ -441,7 +441,7 @@ class Handlers:
             )
             return
         
-        participants = Database.get_participants(chat_id)
+        participants = Database.get_participants(chat.id)
         
         if not participants:
             text = "👥 Участников пока нет."
@@ -454,6 +454,7 @@ class Handlers:
                     text += f"• {p['first_name']}\n"
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    
     # ============ ЛИЧНЫЙ КАБИНЕТ ============
     
     async def show_dm_cabinet(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -670,27 +671,22 @@ class Handlers:
         
         if not chat_id:
             text = "❌ Активная поездка не найдена"
-            if update.callback_query:
-                await query.edit_message_text(text)
-            else:
-                await update.message.reply_text(text)
-            return
-        
-        text = Utils.format_history(chat_id)
-        
-        keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="dm_back")]]
+            keyboard = None
+        else:
+            text = Utils.format_history(chat_id)
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="dm_back")]]
         
         if update.callback_query:
             await query.edit_message_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
             )
         else:
             await update.message.reply_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
             )
     
     async def show_notifications_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -753,6 +749,7 @@ class Handlers:
         Database.update_user_settings(user.id, notification_type=notif_type)
         
         await self.show_notifications_settings(update, context)
+    
     # ============ ДОБАВЛЕНИЕ ДОЛГА В ГРУППЕ (ЕДИНСТВЕННЫЙ СПОСОБ) ============
     
     async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1053,6 +1050,7 @@ class Handlers:
             logger.error(f"Failed to update group: {e}")
     
     # ============ CALLBACK HANDLERS ============
+    
     async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Общий обработчик callback'ов"""
         query = update.callback_query
@@ -1215,4 +1213,3 @@ class Handlers:
         
         else:
             await query.answer()
-
