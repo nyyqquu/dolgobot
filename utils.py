@@ -10,12 +10,15 @@ class Utils:
     
     @staticmethod
     def format_amount(amount: float, currency: str) -> str:
-        """Форматирование суммы"""
+        """Форматирование суммы с двумя знаками после запятой"""
         return f"{amount:.2f} {currency}"
     
     @staticmethod
     def get_participant_name(user_id: int, participants: list) -> str:
-        """Получить имя участника по ID (ПРИОРИТЕТ: @username)"""
+        """
+        Получить имя участника по ID
+        ПРИОРИТЕТ: @username > first_name
+        """
         for p in participants:
             if p['user_id'] == user_id:
                 # ПРИОРИТЕТ: @username, если есть
@@ -25,8 +28,30 @@ class Utils:
         return "Неизвестный"
     
     @staticmethod
+    def get_debt_group_info(debt_group_id: str) -> dict:
+        """
+        Получить информацию о группе долгов
+        Возвращает dict с description и category
+        """
+        try:
+            from firebase_admin import firestore
+            db = firestore.client()
+            
+            debt_group = db.collection('debt_groups').document(debt_group_id).get()
+            if debt_group.exists:
+                data = debt_group.to_dict()
+                return {
+                    'description': data.get('description', 'Без описания'),
+                    'category': data.get('category', '💸')
+                }
+        except Exception as e:
+            logger.error(f"Error getting debt group info: {e}")
+        
+        return {'description': 'Без описания', 'category': '💸'}
+    
+    @staticmethod
     def format_summary(chat_id: int) -> str:
-        """Форматировать сводку долгов"""
+        """Форматировать сводку долгов для группы"""
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -51,7 +76,10 @@ class Utils:
     
     @staticmethod
     def format_my_debts(chat_id: int, user_id: int) -> str:
-        """Форматировать мои долги (БЕЗ ID)"""
+        """
+        Форматировать мои долги (что я должен)
+        БЕЗ ПОКАЗА ID долгов
+        """
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -61,7 +89,7 @@ class Utils:
         currency = trip['currency']
         
         if not my_debts:
-            return f"✅ У вас нет долгов!"
+            return "✅ У вас нет долгов!"
         
         text = f"💰 *Мои долги ({currency}):*\n\n"
         
@@ -71,7 +99,7 @@ class Utils:
             
             group_info = debt.get('group_info', {})
             description = group_info.get('description', 'Без описания')
-            category = group_info.get('category', '')
+            category = group_info.get('category', '💸')
             
             text += f"{category} *{description}*\n"
             text += f"Должен {creditor_name}: *{amount}*\n\n"
@@ -83,7 +111,10 @@ class Utils:
     
     @staticmethod
     def format_debts_to_me(chat_id: int, user_id: int) -> str:
-        """Форматировать долги мне"""
+        """
+        Форматировать долги мне (кто мне должен)
+        Группировка по должникам
+        """
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -93,10 +124,11 @@ class Utils:
         currency = trip['currency']
         
         if not debts_to_me:
-            return f"✅ Вам никто не должен!"
+            return "✅ Вам никто не должен!"
         
         text = f"💵 *Мне должны ({currency}):*\n\n"
         
+        # Группировка по должникам
         debts_by_debtor = {}
         for debt in debts_to_me:
             debtor_id = debt['debtor_id']
@@ -104,24 +136,21 @@ class Utils:
                 debts_by_debtor[debtor_id] = []
             debts_by_debtor[debtor_id].append(debt)
         
+        # Вывод по каждому должнику
         for debtor_id, debts in debts_by_debtor.items():
             debtor_name = Utils.get_participant_name(debtor_id, participants)
             total_from_debtor = sum(d['amount'] for d in debts)
             
             text += f"*{debtor_name}:* {Utils.format_amount(total_from_debtor, currency)}\n"
             
+            # Детали долгов
             for debt in debts:
-                from firebase_admin import firestore
-                db_instance = firestore.client()
-                debt_group = db_instance.collection('debt_groups').document(debt['debt_group_id']).get()
-                if debt_group.exists:
-                    group_data = debt_group.to_dict()
-                    description = group_data.get('description', 'долг')
-                    category = group_data.get('category', '💸')
-                    text += f"  {category} {description}\n"
+                debt_info = Utils.get_debt_group_info(debt['debt_group_id'])
+                text += f"  {debt_info['category']} {debt_info['description']}\n"
             
             text += "\n"
         
+        # Общая сумма
         total = sum(d['amount'] for d in debts_to_me)
         text += f"📊 Итого должны: *{Utils.format_amount(total, currency)}*"
         
@@ -129,7 +158,10 @@ class Utils:
     
     @staticmethod
     def format_history(chat_id: int, limit: int = 10) -> str:
-        """Форматировать историю долгов"""
+        """
+        Форматировать историю долгов
+        limit: количество последних записей
+        """
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
@@ -147,7 +179,7 @@ class Utils:
             payer_name = Utils.get_participant_name(dg['payer_id'], participants)
             amount = Utils.format_amount(dg['total_amount'], currency)
             description = dg.get('description', 'Без описания')
-            category = dg.get('category', '')
+            category = dg.get('category', '💸')
             
             text += f"{category} *{amount}* — {description}\n"
             text += f"   Заплатил: {payer_name}\n"
@@ -163,8 +195,12 @@ class Utils:
     
     @staticmethod
     def validate_amount(text: str) -> tuple:
-        """Валидация суммы"""
+        """
+        Валидация суммы долга
+        Возвращает (bool, float|str): (успех, сумма или текст ошибки)
+        """
         try:
+            # Заменяем запятую на точку для корректного парсинга
             text = text.replace(',', '.')
             amount = float(text)
             
@@ -172,7 +208,7 @@ class Utils:
                 return False, "Сумма должна быть больше нуля"
             
             if amount > 10000000:
-                return False, "Сумма слишком большая"
+                return False, "Сумма слишком большая (макс. 10,000,000)"
             
             return True, amount
         except ValueError:
@@ -182,12 +218,18 @@ class Utils:
     def parse_participants_from_text(text: str, all_participants: list) -> list:
         """
         Извлечь участников из текста по @username или имени
-        Возвращает список user_id
+        
+        Приоритет:
+        1. @username (точное совпадение)
+        2. first_name (точное совпадение без учёта регистра)
+        
+        Возвращает: список user_id
         """
         mentioned_ids = []
-        
         words = text.split()
+        
         for word in words:
+            # Обработка @username
             if word.startswith('@'):
                 username = word[1:].lower().strip('.,!?;:')
                 for p in all_participants:
@@ -195,6 +237,8 @@ class Utils:
                         if p['user_id'] not in mentioned_ids:
                             mentioned_ids.append(p['user_id'])
                         break
+            
+            # Обработка по имени
             else:
                 word_clean = word.lower().strip('.,!?;:')
                 for p in all_participants:
