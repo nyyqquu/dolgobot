@@ -1,5 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from config import CURRENCIES, EXPENSE_CATEGORIES
+from config import CURRENCIES
 
 
 class Keyboards:
@@ -7,7 +7,7 @@ class Keyboards:
     
     @staticmethod
     def main_group_menu():
-        """Главное меню для группового чата (ИСПРАВЛЕНО: вернул кнопку Добавить долг)"""
+        """Главное меню для группового чата"""
         keyboard = [
             [InlineKeyboardButton("➕ Добавить долг", callback_data="show_add_expense_info")],
             [InlineKeyboardButton("📌 Сводка долгов", callback_data="show_summary")],
@@ -18,22 +18,22 @@ class Keyboards:
     
     @staticmethod
     def currency_selection():
-        """Выбор валюты"""
+        """Выбор валюты (3 кнопки в ряд)"""
         keyboard = []
         row = []
         for i, currency in enumerate(CURRENCIES):
             row.append(InlineKeyboardButton(currency, callback_data=f"currency_{currency}"))
-            if (i + 1) % 3 == 0:
+            if (i + 1) % 3 == 0:  # По 3 кнопки в ряд
                 keyboard.append(row)
                 row = []
-        if row:
+        if row:  # Добавить оставшиеся кнопки
             keyboard.append(row)
         keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="currency_cancel")])
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def dm_main_menu(show_switch_trip=False):
-        """Главное меню личного кабинета (ИСПРАВЛЕНО: убрал Настройки, добавил Очистить)"""
+        """Главное меню личного кабинета"""
         keyboard = [
             [InlineKeyboardButton("📌 Долги", callback_data="dm_debts")],
             [InlineKeyboardButton("🧾 История", callback_data="dm_history")],
@@ -48,7 +48,7 @@ class Keyboards:
     
     @staticmethod
     def debts_tabs():
-        """Вкладки долгов"""
+        """Вкладки долгов с кнопкой "На главную" """
         keyboard = [
             [
                 InlineKeyboardButton("💰 Я должен", callback_data="debts_i_owe"),
@@ -61,7 +61,7 @@ class Keyboards:
     
     @staticmethod
     def notification_settings(current_type):
-        """Настройки уведомлений"""
+        """Настройки уведомлений с галочкой у активного"""
         options = [
             ("all", "✅ Все уведомления"),
             ("off", "❌ Выключить")
@@ -69,6 +69,7 @@ class Keyboards:
         
         keyboard = []
         for option_value, option_text in options:
+            # Добавляем ✔️ к активной настройке
             prefix = "✔️ " if option_value == current_type else ""
             keyboard.append([
                 InlineKeyboardButton(
@@ -82,7 +83,7 @@ class Keyboards:
     
     @staticmethod
     def open_dm_button(bot_username):
-        """Кнопка открытия ЛС"""
+        """Кнопка открытия ЛС с deep link"""
         keyboard = [
             [InlineKeyboardButton(
                 "🧑 Открыть личный кабинет",
@@ -93,7 +94,7 @@ class Keyboards:
     
     @staticmethod
     def summary_actions(bot_username, chat_id):
-        """Действия под сводкой"""
+        """Действия под сводкой с deep links"""
         keyboard = [
             [InlineKeyboardButton("🔄 Обновить", callback_data="show_summary")],
             [
@@ -112,7 +113,7 @@ class Keyboards:
     
     @staticmethod
     def debt_pay_button(debt_id):
-        """Кнопка оплаты долга"""
+        """Кнопка оплаты конкретного долга"""
         keyboard = [
             [InlineKeyboardButton("✅ Вернул долг", callback_data=f"pay_debt_{debt_id}")],
             [InlineKeyboardButton("🔙 К долгам", callback_data="debts_i_owe")],
@@ -122,13 +123,18 @@ class Keyboards:
     
     @staticmethod
     def my_debts_list(debts):
-        """Список моих долгов с кнопками оплаты"""
+        """Список моих долгов с кнопками (обрезка длинных названий)"""
         keyboard = []
         
         for debt in debts:
             group_info = debt.get('group_info', {})
-            description = group_info.get('description', 'Долг')[:30]
+            description = group_info.get('description', 'Долг')
             category = group_info.get('category', '💸')
+            
+            # Обрезаем длинное описание и добавляем "..."
+            max_length = 30
+            if len(description) > max_length:
+                description = description[:max_length] + "..."
             
             keyboard.append([
                 InlineKeyboardButton(
