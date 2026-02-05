@@ -66,7 +66,6 @@ def main():
     application.add_handler(CommandHandler('summary', handlers.summary_command))
     application.add_handler(CommandHandler('participants', handlers.participants_command))
     application.add_handler(CommandHandler('deletetrip', handlers.delete_trip_command, filters=filters.ChatType.GROUPS))
-    application.add_handler(CommandHandler('clear', handlers.clear_bot_messages, filters=filters.ChatType.GROUPS))
     
     # ============ CONVERSATION HANDLERS ============
     
