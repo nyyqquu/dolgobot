@@ -9,7 +9,6 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-# Состояния для ConversationHandler
 TRIP_NAME, TRIP_CURRENCY = range(2)
 
 
@@ -18,8 +17,6 @@ class Handlers:
     
     def __init__(self, bot_username: str):
         self.bot_username = bot_username
-    
-    # ============ АВТОДОБАВЛЕНИЕ УЧАСТНИКОВ ============
     
     async def handle_group_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка сообщений в группе для автодобавления участников"""
@@ -42,8 +39,6 @@ class Handlers:
     async def handle_private_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка обычных сообщений в ЛС"""
         return await self.show_dm_cabinet(update, context)
-    
-    # ============ КОМАНДЫ ============
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /start"""
@@ -93,7 +88,8 @@ class Handlers:
                 "1. Добавьте меня в групповой чат поездки\n"
                 "2. Создайте поездку командой /newtrip\n"
                 "3. Пишите долги прямо в группе:\n"
-                "   `2000 @user описание`\n\n"
+                "   `2000 @user описание`\n"
+                "   `2000 THB @user описание` (с валютой)\n\n"
                 "💡 У вас пока нет активной поездки."
             )
             
@@ -141,7 +137,11 @@ class Handlers:
             "/clear — Удалить все сообщения бота\n\n"
             "*Быстрое добавление долга В ГРУППЕ:*\n"
             "`2000 @участник1 @участник2 описание`\n"
-            "Пример: `2000 @саша @никита такси`\n\n"
+            "`2000 THB @участник такси` (с валютой)\n\n"
+            "Пример: `2000 @саша @никита такси`\n"
+            "С валютой: `500 RUB @катя кофе`\n\n"
+            "*Поддерживаемые валюты:*\n"
+            "EUR, USD, RUB, THB, GEL, TRY, CNY\n\n"
             "*В личном кабинете:*\n"
             "📌 Долги — посмотреть свои долги\n"
             "🧾 История — все долги поездки\n"
@@ -151,7 +151,7 @@ class Handlers:
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     
     async def join_trip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Быстрое присоединение к поездке (с автоудалением)"""
+        """Быстрое присоединение к поездке"""
         chat = update.effective_chat
         user = update.effective_user
         
@@ -326,6 +326,9 @@ class Handlers:
             f"✅ Поездка *{trip['name']}* ({currency}) создана!\n\n"
             f"👥 Участники добавляются автоматически\n"
             f"💡 Или используйте /join для быстрого добавления\n\n"
+            f"💸 *Добавление долгов:*\n"
+            f"`2000 @user описание` — валюта {currency}\n"
+            f"`2000 THB @user такси` — другая валюта\n\n"
             f"Управление поездкой:"
         )
         
@@ -501,8 +504,6 @@ class Handlers:
                     text += f"• {p['first_name']}\n"
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-    
-    # ============ ЛИЧНЫЙ КАБИНЕТ ============
     
     async def show_dm_cabinet(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать личный кабинет"""
@@ -768,8 +769,6 @@ class Handlers:
         
         await self.show_notifications_settings(update, context)
     
-    # ============ ДОБАВЛЕНИЕ ДОЛГА В ГРУППЕ ============
-    
     async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Парсинг сообщения типа 2000 @user1 @user2 описание в группе"""
         text = update.message.text
@@ -790,7 +789,7 @@ class Handlers:
         
         participants = Database.get_participants(chat.id)
         
-        # НОВОЕ: Парсим валюту
+        # ПАРСИМ ВАЛЮТУ
         amount, currency, remaining_text = Utils.parse_currency_from_text(text)
         
         if amount is None:
@@ -832,7 +831,6 @@ class Handlers:
                 pass
             return
         
-        # Парсим описание (всё что не @ и не имена)
         description_parts = []
         for part in remaining_text.split():
             if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
@@ -847,7 +845,7 @@ class Handlers:
             participants=mentioned_ids,
             description=description,
             category='💸',
-            currency=currency  # ПЕРЕДАЁМ ВАЛЮТУ!
+            currency=currency
         )
         
         if not debt_result:
@@ -912,6 +910,7 @@ class Handlers:
         payer_name = Utils.get_participant_name(payer_id, participants)
         description = group_data['description']
         category = group_data.get('category', '💸')
+        currency = group_data.get('currency', trip['currency'])
         
         for debt in individual_debts:
             debtor_id = debt['debtor_id']
@@ -925,7 +924,7 @@ class Handlers:
                 text = (
                     f"🔔 *Новый долг в \"{trip['name']}\"*\n\n"
                     f"{category} {description}\n"
-                    f"💰 Вы должны {payer_name}: *{Utils.format_amount(amount, trip['currency'])}*\n\n"
+                    f"💰 Вы должны {payer_name}: *{Utils.format_amount(amount, currency)}*\n\n"
                     f"Нажмите /start чтобы посмотреть все долги"
                 )
                 
@@ -942,7 +941,7 @@ class Handlers:
             text = (
                 f"✅ *Долг создан в \"{trip['name']}\"*\n\n"
                 f"{category} {description}\n"
-                f"💰 Вам должны: *{Utils.format_amount(total_owed, trip['currency'])}*\n"
+                f"💰 Вам должны: *{Utils.format_amount(total_owed, currency)}*\n"
                 f"👥 Должников: {len(individual_debts)}"
             )
             
@@ -953,8 +952,6 @@ class Handlers:
             )
         except Exception as e:
             logger.error(f"Failed to send notification to payer {payer_id}: {e}")
-    
-    # ============ ВОЗВРАТ ДОЛГА ============
     
     async def show_debt_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать детали конкретного долга с кнопкой оплаты"""
@@ -981,12 +978,14 @@ class Handlers:
             group_data = debt_group.to_dict()
             description = group_data.get('description', 'Долг')
             category = group_data.get('category', '💸')
+            currency = group_data.get('currency', trip['currency'])
         else:
             description = "Долг"
             category = "💸"
+            currency = trip['currency']
         
         creditor_name = Utils.get_participant_name(debt['creditor_id'], participants)
-        amount = Utils.format_amount(debt['amount'], trip['currency'])
+        amount = Utils.format_amount(debt['amount'], currency)
         
         text = (
             f"{category} *{description}*\n\n"
@@ -1032,15 +1031,17 @@ class Handlers:
         debt_group = db_instance.collection('debt_groups').document(debt_data['debt_group_id']).get()
         description = "Долг"
         category = "💸"
+        currency = trip['currency']
         if debt_group.exists:
             group_data = debt_group.to_dict()
             description = group_data.get('description', 'Долг')
             category = group_data.get('category', '💸')
+            currency = group_data.get('currency', trip['currency'])
         
         await query.edit_message_text(
             f"✅ *Долг возвращен!*\n\n"
             f"{category} {description}\n"
-            f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
+            f"💰 Сумма: {Utils.format_amount(amount, currency)}\n"
             f"👤 Кредитор: {creditor_name}\n\n"
             f"Спасибо за честность! 🎉",
             parse_mode=ParseMode.MARKDOWN
@@ -1051,7 +1052,7 @@ class Handlers:
                 f"💰 *Долг возвращен!*\n\n"
                 f"👤 {debtor_name} вернул вам долг:\n"
                 f"{category} {description}\n"
-                f"💵 Сумма: *{Utils.format_amount(amount, trip['currency'])}*\n\n"
+                f"💵 Сумма: *{Utils.format_amount(amount, currency)}*\n\n"
                 f"Поездка: {trip['name']}"
             )
             
@@ -1072,8 +1073,6 @@ class Handlers:
             )
         except Exception as e:
             logger.error(f"Failed to update group: {e}")
-    
-    # ============ CALLBACK HANDLERS ============
     
     async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Общий обработчик callback'ов"""
@@ -1126,6 +1125,10 @@ class Handlers:
                     "`2000 @никита @саша такси`\n"
                     "`500 @катя кофе`\n"
                     "`15000 @петя @маша @иван отель`\n\n"
+                    "💱 *С другой валютой:*\n"
+                    "`2000 THB @никита такси`\n"
+                    "`500 RUB @катя кофе`\n"
+                    "`1000 CNY @петя сувениры`\n\n"
                     "Вы автоматически становитесь плательщиком!"
                 )
                 await query.edit_message_text(
