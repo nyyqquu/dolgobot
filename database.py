@@ -204,24 +204,65 @@ class Database:
             return []
     
     @staticmethod
-    def get_all_debt_groups(chat_id: int, limit: int = 20):
-        """Получить ВСЕ группы долгов для истории (включая погашенные)"""
+    def get_history_events(chat_id: int, limit: int = 50):
+        """
+        Получить историю ВСЕХ событий (создание + погашение долгов)
+        Как банковская выписка
+        """
         try:
+            events = []
+            
+            # 1. Получаем все debt_groups (создание долгов)
             debt_groups = db.collection('debt_groups')\
                 .where('chat_id', '==', chat_id)\
                 .where('is_deleted', '==', False)\
-                .order_by('created_at', direction=firestore.Query.DESCENDING)\
-                .limit(limit)\
                 .stream()
             
-            result = []
             for dg in debt_groups:
                 data = dg.to_dict()
-                data['id'] = dg.id
-                result.append(data)
-            return result
+                events.append({
+                    'type': 'debt_created',
+                    'timestamp': data['created_at'],
+                    'debt_group_id': dg.id,
+                    'payer_id': data['payer_id'],
+                    'total_amount': data['total_amount'],
+                    'description': data.get('description', 'Долг'),
+                    'category': data.get('category', '💸'),
+                    'participants': data['all_participants']
+                })
+            
+            # 2. Получаем все погашенные долги (события погашения)
+            paid_debts = db.collection('debts')\
+                .where('chat_id', '==', chat_id)\
+                .where('is_paid', '==', True)\
+                .stream()
+            
+            for debt in paid_debts:
+                data = debt.to_dict()
+                if data.get('paid_at'):
+                    # Получаем инфу о debt_group
+                    debt_group = db.collection('debt_groups').document(data['debt_group_id']).get()
+                    if debt_group.exists:
+                        dg_data = debt_group.to_dict()
+                        events.append({
+                            'type': 'debt_paid',
+                            'timestamp': data['paid_at'],
+                            'debt_id': debt.id,
+                            'debtor_id': data['debtor_id'],
+                            'creditor_id': data['creditor_id'],
+                            'amount': data['amount'],
+                            'description': dg_data.get('description', 'Долг'),
+                            'category': dg_data.get('category', '💸')
+                        })
+            
+            # 3. Сортируем все события по времени (новые сверху)
+            events.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            # 4. Ограничиваем количество
+            return events[:limit]
+            
         except Exception as e:
-            logger.error(f"Error getting all debt groups: {e}")
+            logger.error(f"Error getting history events: {e}")
             return []
     
     @staticmethod
