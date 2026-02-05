@@ -48,7 +48,26 @@ class Handlers:
                     chat_id = int(arg.split('_')[1])
                     return await self.show_history_dm(update, context, chat_id)
             
-            # Обычный старт в ЛС
+            # Проверяем, есть ли у пользователя активная поездка
+            active_trip_id = Database.get_user_active_trip(user.id)
+            
+            if active_trip_id:
+                trip = Database.get_trip(active_trip_id)
+                if trip:
+                    text = (
+                        f"👤 *Личный кабинет*\n\n"
+                        f"🎒 Активная поездка: *{trip['name']}*\n"
+                        f"💱 Валюта: {trip['currency']}\n\n"
+                        "Выберите действие:"
+                    )
+                    await update.message.reply_text(
+                        text,
+                        parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=Keyboards.dm_main_menu()
+                    )
+                    return
+            
+            # Обычный старт в ЛС (нет активной поездки)
             text = (
                 "👋 Привет! Я *TripSplit Bot* — помогаю считать долги в путешествиях.\n\n"
                 "🎯 Основные возможности:\n"
@@ -58,24 +77,33 @@ class Handlers:
                 "📱 Чтобы начать:\n"
                 "1. Добавьте меня в групповой чат поездки\n"
                 "2. Создайте поездку командой /newtrip\n"
-                "3. Добавляйте расходы и следите за долгами!\n\n"
-                "Выберите действие:"
+                "3. Все участники чата автоматически добавятся в поездку\n"
+                "4. Добавляйте расходы и следите за долгами!\n\n"
+                "💡 У вас пока нет активной поездки."
             )
             
-            await update.message.reply_text(
-                text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=Keyboards.dm_main_menu()
-            )
+            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
         
         else:
-            # В групповом чате
-            text = (
-                f"👋 Привет, {user.first_name}!\n\n"
-                "Я помогу вам считать расходы в путешествии.\n"
-                "Используйте /newtrip чтобы создать поездку."
-            )
-            await update.message.reply_text(text)
+            # В групповом чате - показываем меню поездки
+            trip = Database.get_trip(chat.id)
+            if trip:
+                text = (
+                    f"🎒 *{trip['name']}*\n"
+                    f"💱 Валюта: {trip['currency']}\n\n"
+                    "Управление поездкой:"
+                )
+                await update.message.reply_text(
+                    text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=Keyboards.main_group_menu()
+                )
+            else:
+                text = (
+                    f"👋 Привет! Я помогу вести учёт расходов.\n\n"
+                    "Создайте поездку командой /newtrip"
+                )
+                await update.message.reply_text(text)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /help"""
@@ -83,6 +111,7 @@ class Handlers:
             "ℹ️ *Помощь по боту*\n\n"
             "*Команды для группового чата:*\n"
             "/newtrip — Создать новую поездку\n"
+            "/start — Показать меню поездки\n"
             "/summary — Показать сводку долгов\n"
             "/expense — Добавить расход\n"
             "/participants — Показать участников\n\n"
@@ -92,9 +121,10 @@ class Handlers:
             "🔔 Уведомления — настроить оповещения\n\n"
             "💡 *Как работает бот:*\n"
             "1. Создайте поездку в групповом чате\n"
-            "2. Добавляйте расходы через личный кабинет\n"
-            "3. Бот автоматически рассчитает долги\n"
-            "4. Следите за балансом в реальном времени"
+            "2. Все участники чата автоматически добавляются\n"
+            "3. Добавляйте расходы через личный кабинет\n"
+            "4. Бот автоматически рассчитает долги\n"
+            "5. Следите за балансом в реальном времени"
         )
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
@@ -113,38 +143,69 @@ class Handlers:
         # Проверяем, нет ли уже поездки
         existing_trip = Database.get_trip(chat.id)
         if existing_trip:
-            await update.message.reply_text(
+            text = (
                 f"ℹ️ Поездка *{existing_trip['name']}* уже создана для этого чата.\n\n"
-                "Используйте /summary для просмотра сводки.",
-                parse_mode=ParseMode.MARKDOWN
+                "Используйте /start для управления."
             )
+            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
             return ConversationHandler.END
         
         text = (
             "🎒 *Создание поездки*\n\n"
-            "Создать поездку для этого чата?"
+            "Как назовём поездку?\n"
+            "Напишите название или нажмите кнопку, чтобы использовать название чата."
+        )
+        
+        # Кнопка с названием чата
+        keyboard = [
+            [InlineKeyboardButton(f"✅ {chat.title}", callback_data="use_chat_name")],
+            [InlineKeyboardButton("❌ Отмена", callback_data="trip_create_cancel")]
+        ]
+        
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        
+        # Сохраняем название чата для использования
+        context.user_data['default_trip_name'] = chat.title or "Моя поездка"
+        
+        return TRIP_NAME
+    
+    async def trip_name_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Ввод названия поездки"""
+        trip_name = update.message.text
+        
+        if len(trip_name) > 100:
+            await update.message.reply_text("❌ Название слишком длинное (макс. 100 символов). Попробуйте ещё раз:")
+            return TRIP_NAME
+        
+        context.user_data['trip_name'] = trip_name
+        
+        text = (
+            f"📝 Название: *{trip_name}*\n\n"
+            "Теперь выберите валюту поездки:"
         )
         
         await update.message.reply_text(
             text,
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.create_trip_confirm()
+            reply_markup=Keyboards.currency_selection()
         )
         
-        return TRIP_NAME
+        return TRIP_CURRENCY
     
-    async def trip_create_confirm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Подтверждение создания поездки"""
+    async def use_chat_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Использовать название чата как название поездки"""
         query = update.callback_query
         await query.answer()
         
-        chat = query.message.chat
-        
-        # Используем название чата как название поездки по умолчанию
-        context.user_data['trip_name'] = chat.title or "Моя поездка"
+        trip_name = context.user_data.get('default_trip_name', 'Моя поездка')
+        context.user_data['trip_name'] = trip_name
         
         text = (
-            f"📝 Название поездки: *{context.user_data['trip_name']}*\n\n"
+            f"📝 Название: *{trip_name}*\n\n"
             "Теперь выберите валюту поездки:"
         )
         
@@ -173,20 +234,40 @@ class Handlers:
             creator_id=user.id
         )
         
-        # Добавляем создателя как участника
-        Database.add_participant(
-            chat_id=chat.id,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name
-        )
+        # Автоматически добавляем всех участников чата
+        try:
+            chat_members = await context.bot.get_chat_administrators(chat.id)
+            added_count = 0
+            
+            for member in chat_members:
+                if not member.user.is_bot:  # Не добавляем ботов
+                    Database.add_participant(
+                        chat_id=chat.id,
+                        user_id=member.user.id,
+                        username=member.user.username,
+                        first_name=member.user.first_name
+                    )
+                    added_count += 1
+            
+            participants_text = f"👥 Автоматически добавлено участников: {added_count}"
+        except Exception as e:
+            logger.error(f"Error getting chat members: {e}")
+            # Добавляем хотя бы создателя
+            Database.add_participant(
+                chat_id=chat.id,
+                user_id=user.id,
+                username=user.username,
+                first_name=user.first_name
+            )
+            participants_text = "👥 Добавлен создатель поездки"
         
         text = (
             f"✅ Поездка *{trip['name']}* ({currency}) создана!\n\n"
+            f"{participants_text}\n\n"
             "📱 Следующие шаги:\n"
-            "1. Каждый участник должен открыть личный кабинет\n"
-            "2. Добавьте первый расход\n\n"
-            "Нажмите кнопку ниже, чтобы открыть личный кабинет:"
+            "1. Откройте личный кабинет (кнопка ниже)\n"
+            "2. Добавьте первый расход\n"
+            "3. Следите за долгами в сводке"
         )
         
         await query.edit_message_text(
@@ -196,9 +277,20 @@ class Handlers:
         )
         
         # Показываем главное меню группы
-        await query.message.reply_text(
-            "🎯 Главное меню:",
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=f"🎯 *{trip['name']}* — управление:",
+            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.main_group_menu()
+        )
+        
+        # Показываем начальную сводку
+        summary_text = f"📌 *Сводка долгов ({currency})*\n\n✅ Пока расходов нет"
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=summary_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
         )
         
         return ConversationHandler.END
@@ -256,20 +348,16 @@ class Handlers:
         participants = Database.get_participants(chat.id)
         
         if not participants:
-            text = "👥 Участников пока нет.\n\nОткройте личный кабинет, чтобы присоединиться."
+            text = "👥 Участников пока нет."
         else:
-            text = f"👥 *Участники поездки* ({len(participants)}):\n\n"
+            text = f"👥 *Участники поездки \"{trip['name']}\"* ({len(participants)}):\n\n"
             for p in participants:
                 text += f"• {p['first_name']}"
                 if p.get('username'):
                     text += f" (@{p['username']})"
                 text += "\n"
         
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.open_dm_button(self.bot_username)
-        )
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     
     async def expense_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Добавить расход (перенаправление в ЛС)"""
@@ -330,7 +418,7 @@ class Handlers:
                 "Чтобы начать:\n"
                 "1. Добавьте бота в групповой чат\n"
                 "2. Создайте поездку командой /newtrip\n"
-                "3. Откройте личный кабинет из группы"
+                "3. Вы автоматически добавитесь в поездку"
             )
         
         if update.callback_query:
@@ -1006,10 +1094,14 @@ class Handlers:
         
         elif data == "back_to_menu":
             await query.answer()
-            await query.edit_message_text(
-                "🎯 Главное меню:",
-                reply_markup=Keyboards.main_group_menu()
-            )
+            chat = query.message.chat
+            trip = Database.get_trip(chat.id)
+            if trip:
+                await query.edit_message_text(
+                    f"🎯 *{trip['name']}* — управление:",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=Keyboards.main_group_menu()
+                )
         
         else:
             await query.answer()
