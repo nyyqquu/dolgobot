@@ -12,7 +12,6 @@ class Keyboards:
             [InlineKeyboardButton("➕ Добавить расход", callback_data="add_expense")],
             [InlineKeyboardButton("📌 Сводка долгов", callback_data="show_summary")],
             [InlineKeyboardButton("🧑‍🤝‍🧑 Участники", callback_data="show_participants")],
-            [InlineKeyboardButton("💱 Валюта", callback_data="change_currency")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -50,14 +49,19 @@ class Keyboards:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def dm_main_menu():
-        """Главное меню личного кабинета"""
+    def dm_main_menu(show_switch_trip=False):
+        """Главное меню личного кабинета (ИСПРАВЛЕНО)"""
         keyboard = [
             [InlineKeyboardButton("📌 Долги", callback_data="dm_debts")],
             [InlineKeyboardButton("🧾 История", callback_data="dm_history")],
-            [InlineKeyboardButton("🔔 Уведомления", callback_data="dm_notifications")],
-            [InlineKeyboardButton("⚙️ Настройки", callback_data="dm_settings")]
         ]
+        
+        if show_switch_trip:
+            keyboard.append([InlineKeyboardButton("🔄 Сменить поездку", callback_data="dm_switch_trip")])
+        
+        keyboard.append([InlineKeyboardButton("🔔 Уведомления", callback_data="dm_notifications")])
+        keyboard.append([InlineKeyboardButton("⚙️ Настройки", callback_data="dm_settings")])
+        
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
