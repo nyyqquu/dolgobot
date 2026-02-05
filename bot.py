@@ -19,13 +19,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def post_init(application: Application):
+    """Инициализация после запуска бота"""
+    bot = await application.bot.get_me()
+    logger.info(f"Bot started: @{bot.username} (ID: {bot.id})")
+
+
 def main():
     """Запуск бота"""
     logger.info("Starting TripSplit Bot...")
     
+    # Создание приложения
     application = Application.builder().token(BOT_TOKEN).build()
     
-    bot_username = "dolgotripbot"
+    # Получаем username бота (будет установлен в post_init)
+    bot_username = "dolgotripbot"  # fallback
     
     handlers = Handlers(bot_username)
     
@@ -67,28 +75,32 @@ def main():
     
     # ============ CALLBACK HANDLERS ============
     
+    # Специфичные callback'и (обрабатываются первыми)
     application.add_handler(CallbackQueryHandler(
         handlers.update_notification_settings, 
         pattern='^notif_'
     ))
     
+    # Общий обработчик callback'ов (должен быть последним)
     application.add_handler(CallbackQueryHandler(handlers.callback_handler))
     
     # ============ TEXT HANDLERS ============
     
-    # Обработчик текста в ГРУППЕ (для добавления долгов)
+    # ВАЖНО: Порядок имеет значение! От специфичного к общему
+    
+    # 1. Обработчик долгов в ГРУППЕ (начинается с цифры)
     application.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.GROUPS & ~filters.COMMAND & filters.Regex(r'^\d+'),
         handlers.handle_group_expense_text
     ))
     
-    # Обработчик обычных сообщений в группе
+    # 2. Обработчик обычных сообщений в группе (для автодобавления участников)
     application.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.GROUPS & ~filters.COMMAND,
         handlers.handle_group_message
     ))
     
-    # Обработчик сообщений в ЛС
+    # 3. Обработчик сообщений в ЛС (показывает кабинет)
     application.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
         handlers.handle_private_message
@@ -98,10 +110,10 @@ def main():
     
     async def error_handler(update: Update, context):
         """Обработка ошибок"""
-        logger.error(f"Update {update} caused error {context.error}")
+        logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
         
         try:
-            if update.effective_message:
+            if update and update.effective_message:
                 await update.effective_message.reply_text(
                     "❌ Произошла ошибка. Попробуйте ещё раз или напишите /help"
                 )
@@ -110,10 +122,23 @@ def main():
     
     application.add_error_handler(error_handler)
     
+    # ============ POST INIT ============
+    
+    application.post_init = post_init
+    
     # ============ ЗАПУСК БОТА ============
     
-    logger.info("Bot started successfully!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info("Bot handlers configured. Starting polling...")
+    
+    try:
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True  # Игнорировать старые обновления при перезапуске
+        )
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
 
 
 if __name__ == '__main__':
