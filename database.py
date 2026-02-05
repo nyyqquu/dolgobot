@@ -282,11 +282,38 @@ class Database:
     def link_user_to_trip(user_id: int, chat_id: int):
         """Связать пользователя с поездкой для ЛС"""
         doc_ref = db.collection('user_trips').document(str(user_id))
-        doc_ref.set({
-            'active_trip': chat_id,
-            'trips': firestore.ArrayUnion([chat_id]),
-            'updated_at': datetime.now()
-        }, merge=True)
+        
+        # Получаем текущий документ
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            data = doc.to_dict()
+            trips = data.get('trips', [])
+            
+            # Добавляем поездку в список, если её там нет
+            if chat_id not in trips:
+                trips.append(chat_id)
+            
+            # Если активной поездки нет, делаем эту активной
+            if not data.get('active_trip'):
+                doc_ref.update({
+                    'active_trip': chat_id,
+                    'trips': trips,
+                    'updated_at': datetime.now()
+                })
+            else:
+                doc_ref.update({
+                    'trips': trips,
+                    'updated_at': datetime.now()
+                })
+        else:
+            # Создаем новый документ
+            doc_ref.set({
+                'active_trip': chat_id,
+                'trips': [chat_id],
+                'updated_at': datetime.now()
+            })
+        
         logger.info(f"Linked user {user_id} to trip {chat_id}")
     
     @staticmethod
@@ -296,6 +323,24 @@ class Database:
         if doc.exists:
             return doc.to_dict().get('active_trip')
         return None
+    
+    @staticmethod
+    def get_user_trips(user_id: int):
+        """Получить все поездки пользователя (НОВОЕ)"""
+        doc = db.collection('user_trips').document(str(user_id)).get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
+    
+    @staticmethod
+    def set_active_trip(user_id: int, chat_id: int):
+        """Установить активную поездку (НОВОЕ)"""
+        doc_ref = db.collection('user_trips').document(str(user_id))
+        doc_ref.update({
+            'active_trip': chat_id,
+            'updated_at': datetime.now()
+        })
+        logger.info(f"Set active trip {chat_id} for user {user_id}")
     
     @staticmethod
     def delete_debt_group(debt_group_id: str):
