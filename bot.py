@@ -55,11 +55,11 @@ def main():
         persistent=False
     )
     
-    # Добавление расхода
+    # Добавление долга (ИСПРАВЛЕНО: start_debt_flow вместо start_expense_flow)
     expense_conversation = ConversationHandler(
         entry_points=[
             CommandHandler('expense', handlers.expense_command),
-            CallbackQueryHandler(handlers.start_expense_flow, pattern='^add_expense$'),
+            CallbackQueryHandler(handlers.start_debt_flow, pattern='^add_expense$'),
         ],
         states={
             EXPENSE_AMOUNT: [
@@ -70,27 +70,9 @@ def main():
                 CallbackQueryHandler(handlers.expense_payer_select, pattern='^payer_'),
                 CallbackQueryHandler(handlers.expense_cancel, pattern='^cancel$'),
             ],
-            EXPENSE_BENEFICIARIES: [
-                CallbackQueryHandler(handlers.expense_beneficiaries_all, pattern='^beneficiaries_all$'),
-                CallbackQueryHandler(handlers.expense_beneficiaries_select, pattern='^beneficiaries_select$'),
-                CallbackQueryHandler(handlers.expense_participant_toggle, pattern='^participant_toggle_'),
-                CallbackQueryHandler(handlers.expense_participant_all, pattern='^participant_all$'),
-                CallbackQueryHandler(handlers.expense_participant_done, pattern='^participant_done$'),
-                CallbackQueryHandler(handlers.expense_cancel, pattern='^cancel$'),
-            ],
             EXPENSE_CATEGORY: [
                 CallbackQueryHandler(handlers.expense_category_select, pattern='^category_'),
                 CallbackQueryHandler(handlers.expense_category_skip, pattern='^category_skip$'),
-                CallbackQueryHandler(handlers.expense_cancel, pattern='^cancel$'),
-            ],
-            EXPENSE_COMMENT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.expense_comment_input),
-                CallbackQueryHandler(handlers.expense_comment_skip, pattern='^skip$'),
-                CallbackQueryHandler(handlers.expense_cancel, pattern='^cancel$'),
-            ],
-            EXPENSE_CONFIRM: [
-                CallbackQueryHandler(handlers.expense_save, pattern='^expense_save$'),
-                CallbackQueryHandler(handlers.expense_show_confirm, pattern='^expense_edit$'),
                 CallbackQueryHandler(handlers.expense_cancel, pattern='^cancel$'),
             ],
         },
