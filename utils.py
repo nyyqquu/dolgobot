@@ -27,7 +27,7 @@ class Utils:
                     if use_tag:
                         return f"@{p['username']}"
                     else:
-                        return p['username']  # БЕЗ @
+                        return p['username']
                 return p['first_name']
         return "Неизвестный"
     
@@ -73,7 +73,6 @@ class Utils:
         text = f"📌 *Сводка долгов ({currency})*\n\n"
         
         for debt_summary in summary:
-            # БЕЗ @ чтобы не спамить в группе
             debtor_name = Utils.get_participant_name(debt_summary['debtor_id'], participants, use_tag=False)
             creditor_name = Utils.get_participant_name(debt_summary['creditor_id'], participants, use_tag=False)
             amount = Utils.format_amount(debt_summary['total_amount'], currency)
@@ -102,7 +101,6 @@ class Utils:
         text = f"💰 *Мои долги ({currency}):*\n\n"
         
         for debt in my_debts:
-            # С @ потому что в ЛС — удобно кликнуть
             creditor_name = Utils.get_participant_name(debt['creditor_id'], participants, use_tag=True)
             amount = Utils.format_amount(debt['amount'], currency)
             
@@ -137,7 +135,6 @@ class Utils:
         
         text = f"💵 *Мне должны ({currency}):*\n\n"
         
-        # Группировка по должникам
         debts_by_debtor = {}
         for debt in debts_to_me:
             debtor_id = debt['debtor_id']
@@ -145,22 +142,18 @@ class Utils:
                 debts_by_debtor[debtor_id] = []
             debts_by_debtor[debtor_id].append(debt)
         
-        # Вывод по каждому должнику
         for debtor_id, debts in debts_by_debtor.items():
-            # С @ потому что в ЛС
             debtor_name = Utils.get_participant_name(debtor_id, participants, use_tag=True)
             total_from_debtor = sum(d['amount'] for d in debts)
             
             text += f"*{debtor_name}:* {Utils.format_amount(total_from_debtor, currency)}\n"
             
-            # Детали долгов
             for debt in debts:
                 debt_info = Utils.get_debt_group_info(debt['debt_group_id'])
                 text += f"  {debt_info['category']} {debt_info['description']}\n"
             
             text += "\n"
         
-        # Общая сумма
         total = sum(d['amount'] for d in debts_to_me)
         text += f"📊 Итого должны: *{Utils.format_amount(total, currency)}*"
         
@@ -176,7 +169,6 @@ class Utils:
         if not trip:
             return "❌ Поездка не найдена"
         
-        # Получаем ВСЕ debt_groups (и активные, и с погашенными долгами)
         debt_groups = Database.get_all_debt_groups(chat_id, limit=limit)
         participants = Database.get_participants(chat_id)
         currency = trip['currency']
@@ -187,7 +179,6 @@ class Utils:
         text = f"🧾 *История долгов*\n\n"
         
         for dg in debt_groups:
-            # БЕЗ @ в истории
             payer_name = Utils.get_participant_name(dg['payer_id'], participants, use_tag=False)
             amount = Utils.format_amount(dg['total_amount'], currency)
             description = dg.get('description', 'Без описания')
@@ -212,7 +203,6 @@ class Utils:
         Возвращает (bool, float|str): (успех, сумма или текст ошибки)
         """
         try:
-            # Заменяем запятую на точку для корректного парсинга
             text = text.replace(',', '.')
             amount = float(text)
             
@@ -241,7 +231,6 @@ class Utils:
         words = text.split()
         
         for word in words:
-            # Обработка @username
             if word.startswith('@'):
                 username = word[1:].lower().strip('.,!?;:')
                 for p in all_participants:
@@ -249,8 +238,6 @@ class Utils:
                         if p['user_id'] not in mentioned_ids:
                             mentioned_ids.append(p['user_id'])
                         break
-            
-            # Обработка по имени
             else:
                 word_clean = word.lower().strip('.,!?;:')
                 for p in all_participants:
