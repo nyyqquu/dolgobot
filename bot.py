@@ -41,15 +41,15 @@ def main():
             TRIP_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.trip_name_input),
                 CallbackQueryHandler(handlers.use_chat_name, pattern='^use_chat_name$'),
-                CallbackQueryHandler(handlers.trip_create_cancel, pattern='^trip_create_cancel$'),
+                CallbackQueryHandler(handlers.cancel_handler, pattern='^trip_create_cancel$'),
             ],
             TRIP_CURRENCY: [
                 CallbackQueryHandler(handlers.trip_currency_select, pattern='^currency_'),
-                CallbackQueryHandler(handlers.trip_create_cancel, pattern='^currency_cancel$'),
+                CallbackQueryHandler(handlers.cancel_handler, pattern='^currency_cancel$'),
             ],
         },
         fallbacks=[
-            CallbackQueryHandler(handlers.trip_create_cancel, pattern='^trip_create_cancel$')
+            CallbackQueryHandler(handlers.cancel_handler, pattern='^trip_create_cancel$')
         ],
         name="trip_conversation",
         persistent=False
@@ -91,6 +91,8 @@ def main():
     application.add_handler(CommandHandler('summary', handlers.summary_command))
     application.add_handler(CommandHandler('participants', handlers.participants_command))
     application.add_handler(CommandHandler('expense', handlers.expense_command_group, filters=filters.ChatType.GROUPS))
+    application.add_handler(CommandHandler('deletetrip', handlers.delete_trip_command, filters=filters.ChatType.GROUPS))
+    application.add_handler(CommandHandler('clear', handlers.clear_bot_messages, filters=filters.ChatType.GROUPS))
     
     # ============ CONVERSATION HANDLERS ============
     
