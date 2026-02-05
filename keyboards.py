@@ -18,15 +18,15 @@ class Keyboards:
     
     @staticmethod
     def currency_selection():
-        """Выбор валюты (3 кнопки в ряд)"""
+        """Выбор валюты"""
         keyboard = []
         row = []
         for i, currency in enumerate(CURRENCIES):
             row.append(InlineKeyboardButton(currency, callback_data=f"currency_{currency}"))
-            if (i + 1) % 3 == 0:  # По 3 кнопки в ряд
+            if (i + 1) % 3 == 0:
                 keyboard.append(row)
                 row = []
-        if row:  # Добавить оставшиеся кнопки
+        if row:
             keyboard.append(row)
         keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="currency_cancel")])
         return InlineKeyboardMarkup(keyboard)
@@ -48,7 +48,7 @@ class Keyboards:
     
     @staticmethod
     def debts_tabs():
-        """Вкладки долгов с кнопкой "На главную" """
+        """Вкладки долгов"""
         keyboard = [
             [
                 InlineKeyboardButton("💰 Я должен", callback_data="debts_i_owe"),
@@ -61,7 +61,7 @@ class Keyboards:
     
     @staticmethod
     def notification_settings(current_type):
-        """Настройки уведомлений с галочкой у активного"""
+        """Настройки уведомлений"""
         options = [
             ("all", "✅ Все уведомления"),
             ("off", "❌ Выключить")
@@ -69,7 +69,6 @@ class Keyboards:
         
         keyboard = []
         for option_value, option_text in options:
-            # Добавляем ✔️ к активной настройке
             prefix = "✔️ " if option_value == current_type else ""
             keyboard.append([
                 InlineKeyboardButton(
@@ -83,7 +82,7 @@ class Keyboards:
     
     @staticmethod
     def open_dm_button(bot_username):
-        """Кнопка открытия ЛС с deep link"""
+        """Кнопка открытия ЛС"""
         keyboard = [
             [InlineKeyboardButton(
                 "🧑 Открыть личный кабинет",
@@ -94,7 +93,7 @@ class Keyboards:
     
     @staticmethod
     def summary_actions(bot_username, chat_id):
-        """Действия под сводкой с deep links"""
+        """Действия под сводкой"""
         keyboard = [
             [InlineKeyboardButton("🔄 Обновить", callback_data="show_summary")],
             [
@@ -113,7 +112,7 @@ class Keyboards:
     
     @staticmethod
     def debt_pay_button(debt_id):
-        """Кнопка оплаты конкретного долга"""
+        """Кнопка оплаты долга (для должника)"""
         keyboard = [
             [InlineKeyboardButton("✅ Вернул долг", callback_data=f"pay_debt_{debt_id}")],
             [InlineKeyboardButton("🔙 К долгам", callback_data="debts_i_owe")],
@@ -123,7 +122,7 @@ class Keyboards:
     
     @staticmethod
     def my_debts_list(debts):
-        """Список моих долгов с кнопками (обрезка длинных названий)"""
+        """Список моих долгов с кнопками оплаты (должник)"""
         keyboard = []
         
         for debt in debts:
@@ -131,7 +130,6 @@ class Keyboards:
             description = group_info.get('description', 'Долг')
             category = group_info.get('category', '💸')
             
-            # Обрезаем длинное описание и добавляем "..."
             max_length = 30
             if len(description) > max_length:
                 description = description[:max_length] + "..."
@@ -144,4 +142,38 @@ class Keyboards:
             ])
         
         keyboard.append([InlineKeyboardButton("🔙 На главную", callback_data="dm_back")])
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def debts_to_me_list(debts):
+        """Список долгов мне с кнопками подтверждения (кредитор) - НОВОЕ!"""
+        keyboard = []
+        
+        for debt in debts:
+            group_info = debt.get('group_info', {})
+            description = group_info.get('description', 'Долг')
+            category = group_info.get('category', '💸')
+            
+            max_length = 30
+            if len(description) > max_length:
+                description = description[:max_length] + "..."
+            
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{category} {description}",
+                    callback_data=f"show_debt_creditor_{debt['id']}"
+                )
+            ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 На главную", callback_data="dm_back")])
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def debt_confirm_button(debt_id):
+        """Кнопка подтверждения возврата долга (для кредитора) - НОВОЕ!"""
+        keyboard = [
+            [InlineKeyboardButton("✅ Подтвердить возврат", callback_data=f"confirm_debt_{debt_id}")],
+            [InlineKeyboardButton("🔙 К долгам", callback_data="debts_owe_me")],
+            [InlineKeyboardButton("🏠 На главную", callback_data="dm_back")]
+        ]
         return InlineKeyboardMarkup(keyboard)
