@@ -238,3 +238,31 @@ class Keyboards:
             )]
         ]
         return InlineKeyboardMarkup(keyboard)
+    @staticmethod
+    def debt_pay_button(debt_id: str):
+        """Кнопка оплаты долга"""
+        keyboard = [
+            [InlineKeyboardButton("✅ Вернул долг", callback_data=f"pay_debt_{debt_id}")],
+            [InlineKeyboardButton("🔙 Назад к долгам", callback_data="debts_i_owe")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def my_debts_list(debts: list):
+        """Список моих долгов с кнопками оплаты"""
+        keyboard = []
+        
+        for debt in debts:
+            group_info = debt.get('group_info', {})
+            description = group_info.get('description', 'Долг')[:30]  # Обрезаем если длинное
+            category = group_info.get('category', '💸')
+            
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{category} {description} - {debt['amount']:.0f}",
+                    callback_data=f"show_debt_{debt['id']}"
+                )
+            ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="dm_back")])
+        return InlineKeyboardMarkup(keyboard)
