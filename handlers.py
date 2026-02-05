@@ -838,7 +838,7 @@ class Handlers:
         await self.show_notifications_settings(update, context)
     # ============ ДОБАВЛЕНИЕ ДОЛГА ============
     
-    async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Парсинг сообщения типа "2000 @user1 @user2 описание" в группе"""
         text = update.message.text
         chat = update.effective_chat
@@ -878,11 +878,19 @@ class Handlers:
         # Парсим участников
         mentioned_ids = Utils.parse_participants_from_text(text, participants)
         
-        if len(mentioned_ids) < 1:
+        # ИСПРАВЛЕНО: Разрешаем 0 участников (только организатор платит за себя)
+        # Автор ВСЕГДА плательщик
+        payer_id = user.id
+        
+        # Добавляем автора в список участников, если его там нет
+        if payer_id not in mentioned_ids:
+            mentioned_ids.append(payer_id)
+        
+        # ИСПРАВЛЕНО: Если только 1 участник (сам организатор), то долг не создаём
+        if len(mentioned_ids) == 1 and mentioned_ids[0] == payer_id:
             sent = await update.message.reply_text(
-                "❌ Укажите минимум 1 участника через @\n\n"
-                "Пример: `2000 @саша такси` (вы автоматически добавитесь как плательщик)",
-                parse_mode=ParseMode.MARKDOWN,
+                "❌ Нельзя создать долг только на себя!\n\n"
+                "Укажите минимум 1 другого участника через @",
                 reply_to_message_id=update.message.message_id
             )
             await asyncio.sleep(5)
@@ -892,13 +900,6 @@ class Handlers:
             except:
                 pass
             return
-        
-        # Автор ВСЕГДА плательщик
-        payer_id = user.id
-        
-        # Добавляем автора в список участников, если его там нет
-        if payer_id not in mentioned_ids:
-            mentioned_ids.append(payer_id)
         
         # Извлекаем описание
         description_parts = []
@@ -913,21 +914,27 @@ class Handlers:
             chat_id=chat.id,
             amount=amount,
             payer_id=payer_id,
-            participants=mentioned_ids,
+            participants=mentioned_ids,  # Все участники (включая плательщика)
             description=description,
             category='💸'
         )
         
         if not debt_result:
-            await update.message.reply_text(
+            sent = await update.message.reply_text(
                 "❌ Ошибка создания долга",
                 reply_to_message_id=update.message.message_id
             )
+            await asyncio.sleep(5)
+            try:
+                await sent.delete()
+                await update.message.delete()
+            except:
+                pass
             return
         
         # Формируем ответ
         debtors = [p for p in mentioned_ids if p != payer_id]
-        amount_per_person = amount / len(mentioned_ids)
+        amount_per_person = amount / len(mentioned_ids)  # Делим на ВСЕХ участников
         
         debtor_names = [Utils.get_participant_name(d, participants) for d in debtors]
         payer_name = Utils.get_participant_name(payer_id, participants)
@@ -966,8 +973,9 @@ class Handlers:
         
         # Отправляем уведомления
         await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
+
     
-    async def start_debt_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def start_debt_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Начать процесс добавления долга в ЛС"""
         user = update.effective_user
         
@@ -1008,29 +1016,32 @@ class Handlers:
             "📝 *Формат:*\n"
             "`Сумма @участник1 @участник2 описание`\n\n"
             "💡 *Пример:*\n"
-            "`2000 @саша @никита @катя такси в аэропорт`\n\n"
+            "`2000 @саша @никита такси в аэропорт`\n\n"
             f"👥 Доступные участники:\n{participants_text}\n\n"
             "✍️ Напишите ваш долг:"
         )
+        
+        # УБРАЛИ КНОПКУ "ПРОПУСТИТЬ", ОСТАВИЛИ ТОЛЬКО "ОТМЕНА"
+        keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]]
         
         if update.callback_query:
             sent_message = await update.callback_query.edit_message_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=Keyboards.skip_or_cancel()
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
             await self.save_message_id(context, sent_message.message_id)
         else:
             sent_message = await update.message.reply_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=Keyboards.skip_or_cancel()
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
             await self.save_message_id(context, sent_message.message_id)
         
         return EXPENSE_AMOUNT
     
-    async def expense_amount_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def expense_amount_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Парсинг долга из сообщения"""
         text = update.message.text
         chat_id = context.user_data['expense_chat_id']
@@ -1047,13 +1058,60 @@ class Handlers:
         is_valid, amount = Utils.validate_amount(parts[0])
         if not is_valid:
             await self.delete_previous_message(context, user.id)
+            keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]]
             sent_message = await context.bot.send_message(
                 chat_id=user.id,
                 text=f"❌ {amount}\n\nНачните сообщение с суммы",
-                reply_markup=Keyboards.skip_or_cancel()
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
             await self.save_message_id(context, sent_message.message_id)
             return EXPENSE_AMOUNT
+        
+        mentioned_ids = Utils.parse_participants_from_text(text, participants)
+        
+        if len(mentioned_ids) < 2:
+            await self.delete_previous_message(context, user.id)
+            keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]]
+            sent_message = await context.bot.send_message(
+                chat_id=user.id,
+                text="❌ Укажите минимум 2 участников",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            await self.save_message_id(context, sent_message.message_id)
+            return EXPENSE_AMOUNT
+        
+        description_parts = []
+        for part in parts[1:]:
+            if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
+                description_parts.append(part)
+        
+        description = ' '.join(description_parts) if description_parts else "Общий расход"
+        
+        context.user_data['expense_data'] = {
+            'amount': amount,
+            'participants': mentioned_ids,
+            'description': description
+        }
+        
+        mentioned_participants = [p for p in participants if p['user_id'] in mentioned_ids]
+        
+        text = (
+            f"✅ Сумма: *{amount}*\n"
+            f"👥 Участники: {len(mentioned_ids)}\n"
+            f"📝 Описание: {description}\n\n"
+            "💳 Кто заплатил?"
+        )
+        
+        await self.delete_previous_message(context, user.id)
+        sent_message = await context.bot.send_message(
+            chat_id=user.id,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.expense_payer_selection(mentioned_participants)
+        )
+        await self.save_message_id(context, sent_message.message_id)
+        
+        return EXPENSE_PAYER
         
         mentioned_ids = Utils.parse_participants_from_text(text, participants)
         
@@ -1099,15 +1157,6 @@ class Handlers:
         await self.save_message_id(context, sent_message.message_id)
         
         return EXPENSE_PAYER
-    
-    async def expense_skip(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Пропустить"""
-        query = update.callback_query
-        await query.answer()
-        
-        await query.edit_message_text("⏭ Пропущено")
-        context.user_data.clear()
-        return ConversationHandler.END
     
     async def expense_payer_select(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Выбор плательщика"""
