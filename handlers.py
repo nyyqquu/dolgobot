@@ -1297,3 +1297,153 @@ class Handlers:
         
         else:
             await query.answer()
+    # ============ ОБРАБОТКА ТЕКСТА В ГРУППЕ ============
+    
+    async def expense_command_group(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /expense в группе - показываем кнопку ЛС"""
+        chat = update.effective_chat
+        user = update.effective_user
+        
+        # Автодобавление участника
+        Database.add_participant(
+            chat_id=chat.id,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name
+        )
+        Database.link_user_to_trip(user.id, chat.id)
+        
+        trip = Database.get_trip(chat.id)
+        if not trip:
+            await update.message.reply_text(
+                "❌ Поездка не найдена. Создайте её командой /newtrip"
+            )
+            return
+        
+        text = (
+            "➕ *Добавить долг*\n\n"
+            "Для удобства заполним долг в личном кабинете.\n"
+            "Нажмите кнопку ниже:"
+        )
+        
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.add_expense_dm_button(self.bot_username, chat.id)
+        )
+    
+    async def expense_command_dm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /expense в ЛС - запускаем ConversationHandler"""
+        return await self.start_debt_flow(update, context)
+    
+    async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        НОВЫЙ ОБРАБОТЧИК: Парсинг сообщения типа "2000 @user1 @user2 описание" в группе
+        Автоматически создаёт долг без ConversationHandler
+        """
+        text = update.message.text
+        chat = update.effective_chat
+        user = update.effective_user
+        
+        # Автодобавление участника
+        Database.add_participant(
+            chat_id=chat.id,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name
+        )
+        Database.link_user_to_trip(user.id, chat.id)
+        
+        trip = Database.get_trip(chat.id)
+        if not trip:
+            # Поездка не создана - игнорируем
+            return
+        
+        participants = Database.get_participants(chat.id)
+        parts = text.split()
+        
+        # Валидация суммы
+        is_valid, amount = Utils.validate_amount(parts[0])
+        if not is_valid:
+            await update.message.reply_text(
+                f"❌ {amount}",
+                reply_to_message_id=update.message.message_id
+            )
+            return
+        
+        # Парсим участников
+        mentioned_ids = Utils.parse_participants_from_text(text, participants)
+        
+        if len(mentioned_ids) < 2:
+            await update.message.reply_text(
+                "❌ Укажите минимум 2 участников через @\n\n"
+                "Пример: `2000 @никита @саша такси`",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_to_message_id=update.message.message_id
+            )
+            return
+        
+        # Добавляем автора как плательщика, если его нет в списке
+        if user.id not in mentioned_ids:
+            mentioned_ids.append(user.id)
+        
+        # Извлекаем описание
+        description_parts = []
+        for part in parts[1:]:
+            if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
+                description_parts.append(part)
+        
+        description = ' '.join(description_parts) if description_parts else "Общий расход"
+        
+        # Создаём долг (автор = плательщик)
+        payer_id = user.id
+        
+        debt_result = Database.create_debt(
+            chat_id=chat.id,
+            amount=amount,
+            payer_id=payer_id,
+            participants=mentioned_ids,
+            description=description,
+            category='💸'
+        )
+        
+        if not debt_result:
+            await update.message.reply_text(
+                "❌ Ошибка создания долга",
+                reply_to_message_id=update.message.message_id
+            )
+            return
+        
+        # Формируем ответ
+        debtors = [p for p in mentioned_ids if p != payer_id]
+        amount_per_person = amount / len(debtors)
+        
+        debtor_names = [Utils.get_participant_name(d, participants) for d in debtors]
+        payer_name = Utils.get_participant_name(payer_id, participants)
+        
+        response_text = (
+            f"✅ *Долг добавлен!*\n\n"
+            f"💸 *{description}*\n"
+            f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
+            f"👤 Заплатил: {payer_name}\n"
+            f"💳 Должны по: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
+            f"👥 Должники: {', '.join(debtor_names)}"
+        )
+        
+        await update.message.reply_text(
+            response_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_to_message_id=update.message.message_id
+        )
+        
+        # Обновляем сводку
+        summary_text = Utils.format_summary(chat.id)
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=summary_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
+        )
+        
+        # Отправляем уведомления
+        await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
