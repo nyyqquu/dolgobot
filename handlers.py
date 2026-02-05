@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 # Состояния для ConversationHandler
 TRIP_NAME, TRIP_CURRENCY = range(2)
-EXPENSE_AMOUNT, EXPENSE_PAYER, EXPENSE_BENEFICIARIES, EXPENSE_COMMENT, EXPENSE_CATEGORY, EXPENSE_CONFIRM = range(6)
 
 
 class Handlers:
@@ -19,21 +18,6 @@ class Handlers:
     
     def __init__(self, bot_username: str):
         self.bot_username = bot_username
-    
-    # ============ АВТОУДАЛЕНИЕ СООБЩЕНИЙ ============
-    
-    async def delete_previous_message(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
-        """Удалить предыдущее сообщение бота"""
-        try:
-            prev_message_id = context.user_data.get('last_bot_message_id')
-            if prev_message_id:
-                await context.bot.delete_message(chat_id=chat_id, message_id=prev_message_id)
-        except Exception as e:
-            logger.debug(f"Could not delete previous message: {e}")
-    
-    async def save_message_id(self, context: ContextTypes.DEFAULT_TYPE, message_id: int):
-        """Сохранить ID последнего сообщения бота"""
-        context.user_data['last_bot_message_id'] = message_id
     
     # ============ АВТОДОБАВЛЕНИЕ УЧАСТНИКОВ ============
     
@@ -56,7 +40,7 @@ class Handlers:
             Database.link_user_to_trip(user.id, chat.id)
     
     async def handle_private_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка обычных сообщений в ЛС (вне ConversationHandler)"""
+        """Обработка обычных сообщений в ЛС"""
         return await self.show_dm_cabinet(update, context)
     
     # ============ КОМАНДЫ ============
@@ -72,11 +56,6 @@ class Handlers:
                 
                 if arg == 'cabinet':
                     return await self.show_dm_cabinet(update, context)
-                
-                elif arg.startswith('expense_'):
-                    chat_id = int(arg.split('_')[1])
-                    context.user_data['expense_chat_id'] = chat_id
-                    return await self.start_debt_flow(update, context)
                 
                 elif arg.startswith('debts_'):
                     chat_id = int(arg.split('_')[1])
@@ -113,8 +92,8 @@ class Handlers:
                 "📱 Чтобы начать:\n"
                 "1. Добавьте меня в групповой чат поездки\n"
                 "2. Создайте поездку командой /newtrip\n"
-                "3. Все участники чата автоматически добавятся\n"
-                "4. Добавляйте долги: `2000 @user описание`\n\n"
+                "3. Пишите долги прямо в группе:\n"
+                "   `2000 @user описание`\n\n"
                 "💡 У вас пока нет активной поездки."
             )
             
@@ -156,11 +135,10 @@ class Handlers:
             "/newtrip — Создать новую поездку\n"
             "/start — Показать меню поездки\n"
             "/summary — Показать сводку долгов\n"
-            "/expense — Добавить долг через ЛС\n"
             "/participants — Показать участников\n"
             "/deletetrip — Удалить поездку и все данные\n"
             "/clear — Удалить все сообщения бота\n\n"
-            "*Быстрое добавление долга:*\n"
+            "*Быстрое добавление долга В ГРУППЕ:*\n"
             "`2000 @участник1 @участник2 описание`\n"
             "Пример: `2000 @саша @никита такси`\n\n"
             "*В личном кабинете:*\n"
@@ -210,13 +188,11 @@ class Handlers:
             [InlineKeyboardButton("❌ Отмена", callback_data="trip_create_cancel")]
         ]
         
-        sent_message = await update.message.reply_text(
+        await update.message.reply_text(
             text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        
-        await self.save_message_id(context, sent_message.message_id)
         
         context.user_data['default_trip_name'] = chat.title or "Моя поездка"
         
@@ -233,12 +209,10 @@ class Handlers:
             pass
         
         if len(trip_name) > 100:
-            await self.delete_previous_message(context, chat.id)
-            sent_message = await context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=chat.id,
                 text="❌ Название слишком длинное (макс. 100 символов). Попробуйте ещё раз:"
             )
-            await self.save_message_id(context, sent_message.message_id)
             return TRIP_NAME
         
         context.user_data['trip_name'] = trip_name
@@ -248,14 +222,12 @@ class Handlers:
             "Теперь выберите валюту поездки:"
         )
         
-        await self.delete_previous_message(context, chat.id)
-        sent_message = await context.bot.send_message(
+        await context.bot.send_message(
             chat_id=chat.id,
             text=text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.currency_selection()
         )
-        await self.save_message_id(context, sent_message.message_id)
         
         return TRIP_CURRENCY
     
@@ -334,6 +306,7 @@ class Handlers:
         await query.edit_message_text("❌ Отменено.")
         context.user_data.clear()
         return ConversationHandler.END
+    
     async def delete_trip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Удалить поездку и все связанные данные"""
         chat = update.effective_chat
@@ -468,56 +441,19 @@ class Handlers:
             )
             return
         
-        participants = Database.get_participants(chat.id)
+        participants = Database.get_participants(chat_id)
         
         if not participants:
             text = "👥 Участников пока нет."
         else:
             text = f"👥 *Участники поездки \"{trip['name']}\"* ({len(participants)}):\n\n"
             for p in participants:
-                text += f"• {p['first_name']}"
                 if p.get('username'):
-                    text += f" (@{p['username']})"
-                text += "\n"
+                    text += f"• @{p['username']} ({p['first_name']})\n"
+                else:
+                    text += f"• {p['first_name']}\n"
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-    
-    async def expense_command_group(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /expense в группе - показываем кнопку ЛС"""
-        chat = update.effective_chat
-        user = update.effective_user
-        
-        Database.add_participant(
-            chat_id=chat.id,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name
-        )
-        Database.link_user_to_trip(user.id, chat.id)
-        
-        trip = Database.get_trip(chat.id)
-        if not trip:
-            await update.message.reply_text(
-                "❌ Поездка не найдена. Создайте её командой /newtrip"
-            )
-            return
-        
-        text = (
-            "➕ *Добавить долг*\n\n"
-            "Для удобства заполним долг в личном кабинете.\n"
-            "Нажмите кнопку ниже:"
-        )
-        
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.add_expense_dm_button(self.bot_username, chat.id)
-        )
-    
-    async def expense_command_dm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /expense в ЛС - запускаем ConversationHandler"""
-        return await self.start_debt_flow(update, context)
-    
     # ============ ЛИЧНЫЙ КАБИНЕТ ============
     
     async def show_dm_cabinet(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -817,8 +753,7 @@ class Handlers:
         Database.update_user_settings(user.id, notification_type=notif_type)
         
         await self.show_notifications_settings(update, context)
-    
-    # ============ ДОБАВЛЕНИЕ ДОЛГА В ГРУППЕ ============
+    # ============ ДОБАВЛЕНИЕ ДОЛГА В ГРУППЕ (ЕДИНСТВЕННЫЙ СПОСОБ) ============
     
     async def handle_group_expense_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Парсинг сообщения типа 2000 @user1 @user2 описание в группе"""
@@ -943,262 +878,10 @@ class Handlers:
         
         await self.send_debt_notifications(context, chat.id, debt_result, participants, trip)
     
-    # ============ ДОБАВЛЕНИЕ ДОЛГА В ЛС ============
-    
-    async def start_debt_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начать процесс добавления долга в ЛС"""
-        user = update.effective_user
-        
-        chat_id = context.user_data.get('expense_chat_id')
-        if not chat_id:
-            chat_id = Database.get_user_active_trip(user.id)
-        
-        if not chat_id:
-            text = "❌ Активная поездка не найдена"
-            if update.callback_query:
-                await update.callback_query.edit_message_text(text)
-            else:
-                await update.message.reply_text(text)
-            return ConversationHandler.END
-        
-        trip = Database.get_trip(chat_id)
-        if not trip:
-            text = "❌ Поездка не найдена"
-            if update.callback_query:
-                await update.callback_query.edit_message_text(text)
-            else:
-                await update.message.reply_text(text)
-            return ConversationHandler.END
-        
-        context.user_data['expense_chat_id'] = chat_id
-        context.user_data['expense_data'] = {}
-        
-        participants = Database.get_participants(chat_id)
-        participants_text = ", ".join([f"@{p['username']}" if p.get('username') else p['first_name'] for p in participants])
-        
-        text = (
-            f"➕ *Новый долг* ({trip['currency']})\n\n"
-            "🎯 *Как это работает:*\n"
-            "1. Вы пишете сумму и участников через @\n"
-            "2. Бот делит сумму на всех участников\n"
-            "3. Плательщик не должен сам себе\n"
-            "4. Все получают уведомления\n\n"
-            "📝 *Формат:*\n"
-            "`Сумма @участник1 @участник2 описание`\n\n"
-            "💡 *Пример:*\n"
-            "`2000 @саша @никита такси в аэропорт`\n\n"
-            f"👥 Доступные участники:\n{participants_text}\n\n"
-            "✍️ Напишите ваш долг:"
-        )
-        
-        keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]]
-        
-        if update.callback_query:
-            sent_message = await update.callback_query.edit_message_text(
-                text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            await self.save_message_id(context, sent_message.message_id)
-        else:
-            sent_message = await update.message.reply_text(
-                text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            await self.save_message_id(context, sent_message.message_id)
-        
-        return EXPENSE_AMOUNT
-    
-    async def expense_amount_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Парсинг долга из сообщения"""
-        text = update.message.text
-        chat_id = context.user_data['expense_chat_id']
-        user = update.effective_user
-        participants = Database.get_participants(chat_id)
-        
-        try:
-            await update.message.delete()
-        except:
-            pass
-        
-        parts = text.split()
-        
-        is_valid, amount = Utils.validate_amount(parts[0])
-        if not is_valid:
-            await self.delete_previous_message(context, user.id)
-            keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]]
-            sent_message = await context.bot.send_message(
-                chat_id=user.id,
-                text=f"❌ {amount}\n\nНачните сообщение с суммы",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            await self.save_message_id(context, sent_message.message_id)
-            return EXPENSE_AMOUNT
-        
-        mentioned_ids = Utils.parse_participants_from_text(text, participants)
-        
-        if len(mentioned_ids) < 2:
-            await self.delete_previous_message(context, user.id)
-            keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel")]]
-            sent_message = await context.bot.send_message(
-                chat_id=user.id,
-                text="❌ Укажите минимум 2 участников",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            await self.save_message_id(context, sent_message.message_id)
-            return EXPENSE_AMOUNT
-        
-        description_parts = []
-        for part in parts[1:]:
-            if not part.startswith('@') and not any(p['first_name'].lower() in part.lower() for p in participants):
-                description_parts.append(part)
-        
-        description = ' '.join(description_parts) if description_parts else "Общий расход"
-        
-        context.user_data['expense_data'] = {
-            'amount': amount,
-            'participants': mentioned_ids,
-            'description': description
-        }
-        
-        mentioned_participants = [p for p in participants if p['user_id'] in mentioned_ids]
-        
-        text = (
-            f"✅ Сумма: *{amount}*\n"
-            f"👥 Участники: {len(mentioned_ids)}\n"
-            f"📝 Описание: {description}\n\n"
-            "💳 Кто заплатил?"
-        )
-        
-        await self.delete_previous_message(context, user.id)
-        sent_message = await context.bot.send_message(
-            chat_id=user.id,
-            text=text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=Keyboards.expense_payer_selection(mentioned_participants)
-        )
-        await self.save_message_id(context, sent_message.message_id)
-        
-        return EXPENSE_PAYER
-    
-    async def expense_payer_select(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Выбор плательщика"""
-        query = update.callback_query
-        await query.answer()
-        
-        payer_id = int(query.data.split('_')[1])
-        context.user_data['expense_data']['payer_id'] = payer_id
-        
-        text = "📁 Выберите категорию (опционально):"
-        
-        await query.edit_message_text(
-            text,
-            reply_markup=Keyboards.expense_category()
-        )
-        
-        return EXPENSE_CATEGORY
-    
-    async def expense_category_select(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Выбор категории"""
-        query = update.callback_query
-        await query.answer()
-        
-        category = query.data.split('_')[1]
-        context.user_data['expense_data']['category'] = category
-        
-        return await self.expense_confirm_and_save(update, context)
-    
-    async def expense_category_skip(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Пропустить категорию"""
-        query = update.callback_query
-        await query.answer()
-        
-        context.user_data['expense_data']['category'] = '💸'
-        
-        return await self.expense_confirm_and_save(update, context)
-    
-    async def expense_confirm_and_save(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Сохранение долга"""
-        query = update.callback_query
-        
-        expense_data = context.user_data['expense_data']
-        chat_id = context.user_data['expense_chat_id']
-        
-        trip = Database.get_trip(chat_id)
-        participants = Database.get_participants(chat_id)
-        
-        amount = expense_data['amount']
-        payer_id = expense_data['payer_id']
-        debt_participants = expense_data['participants']
-        description = expense_data['description']
-        category = expense_data.get('category', '💸')
-        
-        payer_name = Utils.get_participant_name(payer_id, participants)
-        
-        debt_result = Database.create_debt(
-            chat_id=chat_id,
-            amount=amount,
-            payer_id=payer_id,
-            participants=debt_participants,
-            description=description,
-            category=category
-        )
-        
-        if not debt_result:
-            await query.edit_message_text("❌ Ошибка создания долга")
-            return ConversationHandler.END
-        
-        debtors = [p for p in debt_participants if p != payer_id]
-        amount_per_person = amount / len(debt_participants)
-        
-        await query.edit_message_text(
-            f"✅ Долг добавлен!\n\n"
-            f"{category} *{description}*\n"
-            f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
-            f"👤 Заплатил: {payer_name}\n"
-            f"💳 На человека: {Utils.format_amount(amount_per_person, trip['currency'])}",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        try:
-            debtor_names = [Utils.get_participant_name(d, participants) for d in debtors]
-            
-            group_text = (
-                f"💸 *Новый долг*\n\n"
-                f"{category} *{description}*\n"
-                f"💰 Сумма: {Utils.format_amount(amount, trip['currency'])}\n"
-                f"👤 Заплатил: {payer_name}\n"
-                f"💳 Должны по: {Utils.format_amount(amount_per_person, trip['currency'])}\n\n"
-                f"👥 Должники: {', '.join(debtor_names)}"
-            )
-            
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=group_text,
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-            summary_text = Utils.format_summary(chat_id)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=summary_text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=Keyboards.summary_actions(self.bot_username, chat_id)
-            )
-            
-        except Exception as e:
-            logger.error(f"Error sending to group: {e}")
-        
-        await self.send_debt_notifications(context, chat_id, debt_result, participants, trip)
-        
-        context.user_data.clear()
-        return ConversationHandler.END
-    
     async def send_debt_notifications(self, context: ContextTypes.DEFAULT_TYPE, 
                                       chat_id: int, debt_result: dict, 
                                       participants: list, trip: dict):
-        """Отправить уведомления о долге"""
+        """Отправить уведомления о долге (ИСПРАВЛЕНО: правильная сумма)"""
         group_data = debt_result['group_data']
         individual_debts = debt_result['debts']
         
@@ -1207,9 +890,10 @@ class Handlers:
         description = group_data['description']
         category = group_data.get('category', '💸')
         
+        # Отправляем должникам (ИСПРАВЛЕНО: amount_per_person из individual_debts)
         for debt in individual_debts:
             debtor_id = debt['debtor_id']
-            amount = debt['amount']
+            amount = debt['amount']  # ЭТО УЖЕ ПРАВИЛЬНАЯ СУММА НА ЧЕЛОВЕКА
             
             settings = Database.get_user_settings(debtor_id)
             if settings.get('notification_type') == 'off':
@@ -1231,6 +915,7 @@ class Handlers:
             except Exception as e:
                 logger.error(f"Failed to send notification to {debtor_id}: {e}")
         
+        # Отправляем плательщику
         try:
             total_owed = sum(d['amount'] for d in individual_debts)
             text = (
@@ -1247,15 +932,6 @@ class Handlers:
             )
         except Exception as e:
             logger.error(f"Failed to send notification to payer {payer_id}: {e}")
-    
-    async def expense_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отмена"""
-        query = update.callback_query
-        await query.answer()
-        
-        await query.edit_message_text("❌ Отменено")
-        context.user_data.clear()
-        return ConversationHandler.END
     
     # ============ ВОЗВРАТ ДОЛГА ============
     
@@ -1419,9 +1095,6 @@ class Handlers:
         elif data.startswith("pay_debt_"):
             return await self.pay_debt(update, context)
         
-        elif data == "add_expense":
-            return await self.start_debt_flow(update, context)
-        
         elif data.startswith("confirm_delete_trip_"):
             await query.answer()
             chat_id = int(data.split('_')[3])
@@ -1498,15 +1171,15 @@ class Handlers:
                 participants = Database.get_participants(chat.id)
                 text = f"👥 *Участники* ({len(participants)}):\n\n"
                 for p in participants:
-                    text += f"• {p['first_name']}"
                     if p.get('username'):
-                        text += f" (@{p['username']})"
-                    text += "\n"
+                        text += f"• @{p['username']} ({p['first_name']})\n"
+                    else:
+                        text += f"• {p['first_name']}\n"
                 await query.edit_message_text(
                     text,
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")
+                        InlineKeyboardButton("🔙 На главную", callback_data="back_to_menu")
                     ]])
                 )
         
