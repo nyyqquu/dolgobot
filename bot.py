@@ -63,7 +63,6 @@ def main():
         states={
             EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.expense_amount_input),
-                CallbackQueryHandler(handlers.expense_skip, pattern='^skip$'),
                 CallbackQueryHandler(handlers.expense_cancel, pattern='^cancel$'),
             ],
             EXPENSE_PAYER: [
