@@ -60,7 +60,7 @@ class Keyboards:
         ]
         return InlineKeyboardMarkup(keyboard)
     
-    @staticmethod
+       @staticmethod
     def debts_tabs():
         """Вкладки долгов"""
         keyboard = [
@@ -68,9 +68,11 @@ class Keyboards:
                 InlineKeyboardButton("💰 Я должен", callback_data="debts_i_owe"),
                 InlineKeyboardButton("💵 Мне должны", callback_data="debts_owe_me")
             ],
+            [InlineKeyboardButton("🔄 Обновить", callback_data="debts_refresh")],
             [InlineKeyboardButton("🔙 Назад", callback_data="dm_back")]
         ]
         return InlineKeyboardMarkup(keyboard)
+
     
     @staticmethod
     def participant_selection(participants, selected_ids=None):
