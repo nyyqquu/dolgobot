@@ -1053,8 +1053,7 @@ class Handlers:
             logger.error(f"Failed to update group: {e}")
     
     # ============ CALLBACK HANDLERS ============
-    
-       async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Общий обработчик callback'ов"""
         query = update.callback_query
         data = query.data
@@ -1216,3 +1215,4 @@ class Handlers:
         
         else:
             await query.answer()
+
