@@ -119,8 +119,12 @@ class Database:
     
     @staticmethod
     def create_debt(chat_id: int, amount: float, payer_id: int, 
-                    participants: list, description: str = '', category: str = '💸'):
-        """Создать долг"""
+                    participants: list, description: str = '', 
+                    category: str = '💸', currency: str = None):
+        """
+        Создать долг с валютой
+        currency: если None, берётся из поездки
+        """
         try:
             if not participants or len(participants) < 2:
                 logger.error("Need at least 2 participants (including payer)")
@@ -129,6 +133,11 @@ class Database:
             if payer_id not in participants:
                 logger.error(f"Payer {payer_id} not in participants list")
                 return None
+            
+            # Если валюта не указана, берём из поездки
+            if currency is None:
+                trip = Database.get_trip(chat_id)
+                currency = trip.get('currency', 'EUR') if trip else 'EUR'
             
             amount_per_person = amount / len(participants)
             debtors = [p for p in participants if p != payer_id]
@@ -140,6 +149,7 @@ class Database:
             debt_group_data = {
                 'chat_id': chat_id,
                 'total_amount': amount,
+                'currency': currency,  # ВАЛЮТА НА ДОЛГ!
                 'payer_id': payer_id,
                 'all_participants': participants,
                 'description': description or 'Общий расход',
@@ -159,6 +169,7 @@ class Database:
                     'debtor_id': debtor_id,
                     'creditor_id': payer_id,
                     'amount': amount_per_person,
+                    'currency': currency,  # ВАЛЮТА НА КАЖДЫЙ ИНДИВИДУАЛЬНЫЙ ДОЛГ
                     'is_paid': False,
                     'paid_at': None,
                     'created_at': datetime.now()
@@ -169,7 +180,7 @@ class Database:
             
             logger.info(
                 f"Created debt group {debt_group_id}: "
-                f"{amount} / {len(participants)} participants = "
+                f"{amount} {currency} / {len(participants)} participants = "
                 f"{amount_per_person} per person, {len(debtors)} debtors"
             )
             
@@ -226,6 +237,7 @@ class Database:
                     'debt_group_id': dg.id,
                     'payer_id': data['payer_id'],
                     'total_amount': data['total_amount'],
+                    'currency': data.get('currency', 'EUR'),  # ВАЛЮТА!
                     'description': data.get('description', 'Долг'),
                     'category': data.get('category', '💸'),
                     'participants': data['all_participants']
@@ -251,6 +263,7 @@ class Database:
                             'debtor_id': data['debtor_id'],
                             'creditor_id': data['creditor_id'],
                             'amount': data['amount'],
+                            'currency': data.get('currency', dg_data.get('currency', 'EUR')),  # ВАЛЮТА!
                             'description': dg_data.get('description', 'Долг'),
                             'category': dg_data.get('category', '💸')
                         })
@@ -359,7 +372,7 @@ class Database:
     
     @staticmethod
     def get_debts_summary(chat_id: int):
-        """Получить общую сводку долгов"""
+        """Получить общую сводку долгов (группировка по валютам)"""
         try:
             all_debts = db.collection('debts')\
                 .where('chat_id', '==', chat_id)\
@@ -373,13 +386,15 @@ class Database:
                 debtor_id = data['debtor_id']
                 creditor_id = data['creditor_id']
                 amount = data['amount']
+                currency = data.get('currency', 'EUR')
                 
-                key = f"{debtor_id}_{creditor_id}"
+                key = f"{debtor_id}_{creditor_id}_{currency}"
                 
                 if key not in summary:
                     summary[key] = {
                         'debtor_id': debtor_id,
                         'creditor_id': creditor_id,
+                        'currency': currency,
                         'total_amount': 0
                     }
                 
