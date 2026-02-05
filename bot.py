@@ -9,7 +9,7 @@ from telegram.ext import (
     filters
 )
 from config import BOT_TOKEN
-from handlers import Handlers, TRIP_NAME, TRIP_CURRENCY, EXPENSE_AMOUNT, EXPENSE_PAYER, EXPENSE_BENEFICIARIES, EXPENSE_COMMENT, EXPENSE_CATEGORY, EXPENSE_CONFIRM
+from handlers import Handlers, TRIP_NAME, TRIP_CURRENCY, EXPENSE_AMOUNT, EXPENSE_PAYER, EXPENSE_CATEGORY
 
 # Настройка логирования
 logging.basicConfig(
@@ -55,15 +55,15 @@ def main():
         persistent=False
     )
     
-    # Добавление долга (ИСПРАВЛЕНО: start_debt_flow вместо start_expense_flow)
+    # Добавление долга (ИСПРАВЛЕНО)
     expense_conversation = ConversationHandler(
         entry_points=[
             CommandHandler('expense', handlers.expense_command),
-            CallbackQueryHandler(handlers.start_debt_flow, pattern='^add_expense$'),
         ],
         states={
             EXPENSE_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.expense_amount_input),
+                CallbackQueryHandler(handlers.expense_skip, pattern='^skip$'),
                 CallbackQueryHandler(handlers.expense_cancel, pattern='^cancel$'),
             ],
             EXPENSE_PAYER: [
@@ -106,6 +106,18 @@ def main():
     
     # Общий обработчик callback'ов (должен быть последним)
     application.add_handler(CallbackQueryHandler(handlers.callback_handler))
+    
+    # Обработчик обычных текстовых сообщений в ЛС (для автодобавления в поездку)
+    application.add_handler(MessageHandler(
+        filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
+        handlers.handle_private_message
+    ))
+    
+    # Обработчик сообщений в группе (для автодобавления участников)
+    application.add_handler(MessageHandler(
+        filters.TEXT & filters.ChatType.GROUPS & ~filters.COMMAND,
+        handlers.handle_group_message
+    ))
     
     # ============ ERROR HANDLER ============
     
