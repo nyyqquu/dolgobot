@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 firebase_creds = os.getenv('FIREBASE_CREDENTIALS')
 
 if firebase_creds:
-    # Если переменная окружения существует (на Railway)
     try:
         cred_dict = json.loads(firebase_creds)
         cred = credentials.Certificate(cred_dict)
@@ -20,7 +19,6 @@ if firebase_creds:
         logger.error(f"Failed to parse FIREBASE_CREDENTIALS: {e}")
         raise
 else:
-    # Локально из файла (для разработки)
     try:
         cred = credentials.Certificate('firebase_key.json')
         logger.info("Firebase initialized from local file")
@@ -69,7 +67,6 @@ class Database:
         if trip.exists:
             participants = trip.to_dict().get('participants', [])
             
-            # Проверяем, есть ли уже участник
             if not any(p['user_id'] == user_id for p in participants):
                 participants.append({
                     'user_id': user_id,
@@ -91,56 +88,177 @@ class Database:
         return []
     
     @staticmethod
-    def create_expense(chat_id: int, amount: float, payer_id: int, 
-                      beneficiaries: list, comment: str = '', category: str = ''):
-        """Создать новый расход"""
-        expense_data = {
+    def create_debt(chat_id: int, amount: float, payer_id: int, 
+                    participants: list, description: str = '', category: str = ''):
+        """
+        Создать долг
+        Новая структура: один долг = много индивидуальных долгов
+        """
+        # Считаем количество участников БЕЗ плательщика
+        debtors = [p for p in participants if p != payer_id]
+        
+        if not debtors:
+            return None
+        
+        # Сумма на человека
+        amount_per_person = amount / len(debtors)
+        
+        # Создаем общий долг (родительский документ)
+        debt_group_data = {
             'chat_id': chat_id,
-            'amount': amount,
+            'total_amount': amount,
             'payer_id': payer_id,
-            'beneficiaries': beneficiaries,
-            'comment': comment,
+            'all_participants': participants,  # Все участники включая плательщика
+            'description': description,
             'category': category,
             'created_at': datetime.now(),
-            'updated_at': datetime.now(),
             'is_deleted': False
         }
-        doc_ref = db.collection('expenses').add(expense_data)
-        expense_data['id'] = doc_ref[1].id
-        logger.info(f"Created expense {expense_data['id']} for trip {chat_id}")
-        return expense_data
+        
+        debt_group_ref = db.collection('debt_groups').add(debt_group_data)
+        debt_group_id = debt_group_ref[1].id
+        
+        # Создаем индивидуальные долги
+        individual_debts = []
+        for debtor_id in debtors:
+            debt_data = {
+                'debt_group_id': debt_group_id,
+                'chat_id': chat_id,
+                'debtor_id': debtor_id,  # Кто должен
+                'creditor_id': payer_id,  # Кому должен
+                'amount': amount_per_person,
+                'is_paid': False,
+                'paid_at': None,
+                'created_at': datetime.now()
+            }
+            debt_ref = db.collection('debts').add(debt_data)
+            debt_data['id'] = debt_ref[1].id
+            individual_debts.append(debt_data)
+        
+        logger.info(f"Created debt group {debt_group_id} with {len(individual_debts)} individual debts")
+        
+        return {
+            'group_id': debt_group_id,
+            'debts': individual_debts,
+            'group_data': debt_group_data
+        }
     
     @staticmethod
-    def get_expenses(chat_id: int):
-        """Получить все расходы поездки"""
-        expenses = db.collection('expenses')\
+    def get_debt_groups(chat_id: int):
+        """Получить все группы долгов поездки"""
+        debt_groups = db.collection('debt_groups')\
             .where('chat_id', '==', chat_id)\
             .where('is_deleted', '==', False)\
             .order_by('created_at', direction=firestore.Query.DESCENDING)\
             .stream()
         
         result = []
-        for expense in expenses:
-            data = expense.to_dict()
-            data['id'] = expense.id
+        for dg in debt_groups:
+            data = dg.to_dict()
+            data['id'] = dg.id
             result.append(data)
         return result
     
     @staticmethod
-    def update_expense(expense_id: str, **kwargs):
-        """Обновить расход"""
-        kwargs['updated_at'] = datetime.now()
-        db.collection('expenses').document(expense_id).update(kwargs)
-        logger.info(f"Updated expense {expense_id}")
+    def get_individual_debts(chat_id: int, user_id: int = None):
+        """Получить индивидуальные долги"""
+        query = db.collection('debts').where('chat_id', '==', chat_id)
+        
+        if user_id:
+            # Долги конкретного пользователя (он должник)
+            query = query.where('debtor_id', '==', user_id)
+        
+        debts = query.order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+        
+        result = []
+        for debt in debts:
+            data = debt.to_dict()
+            data['id'] = debt.id
+            result.append(data)
+        return result
     
     @staticmethod
-    def delete_expense(expense_id: str):
-        """Удалить расход (мягкое удаление)"""
-        db.collection('expenses').document(expense_id).update({
-            'is_deleted': True,
-            'deleted_at': datetime.now()
+    def get_debts_to_user(chat_id: int, user_id: int):
+        """Получить долги, где user_id - кредитор (ему должны)"""
+        debts = db.collection('debts')\
+            .where('chat_id', '==', chat_id)\
+            .where('creditor_id', '==', user_id)\
+            .where('is_paid', '==', False)\
+            .stream()
+        
+        result = []
+        for debt in debts:
+            data = debt.to_dict()
+            data['id'] = debt.id
+            result.append(data)
+        return result
+    
+    @staticmethod
+    def mark_debt_paid(debt_id: str):
+        """Отметить долг как возвращенный"""
+        db.collection('debts').document(debt_id).update({
+            'is_paid': True,
+            'paid_at': datetime.now()
         })
-        logger.info(f"Deleted expense {expense_id}")
+        logger.info(f"Marked debt {debt_id} as paid")
+        
+        # Получаем данные долга для возврата
+        debt = db.collection('debts').document(debt_id).get()
+        if debt.exists:
+            return debt.to_dict()
+        return None
+    
+    @staticmethod
+    def get_my_debts(chat_id: int, user_id: int):
+        """Получить мои непогашенные долги"""
+        debts = db.collection('debts')\
+            .where('chat_id', '==', chat_id)\
+            .where('debtor_id', '==', user_id)\
+            .where('is_paid', '==', False)\
+            .stream()
+        
+        result = []
+        for debt in debts:
+            data = debt.to_dict()
+            data['id'] = debt.id
+            
+            # Получаем информацию о группе долга
+            debt_group = db.collection('debt_groups').document(data['debt_group_id']).get()
+            if debt_group.exists:
+                data['group_info'] = debt_group.to_dict()
+            
+            result.append(data)
+        return result
+    
+    @staticmethod
+    def get_debts_summary(chat_id: int):
+        """Получить общую сводку долгов"""
+        all_debts = db.collection('debts')\
+            .where('chat_id', '==', chat_id)\
+            .where('is_paid', '==', False)\
+            .stream()
+        
+        # Группируем долги: кто кому должен
+        summary = {}
+        
+        for debt in all_debts:
+            data = debt.to_dict()
+            debtor_id = data['debtor_id']
+            creditor_id = data['creditor_id']
+            amount = data['amount']
+            
+            key = f"{debtor_id}_{creditor_id}"
+            
+            if key not in summary:
+                summary[key] = {
+                    'debtor_id': debtor_id,
+                    'creditor_id': creditor_id,
+                    'total_amount': 0
+                }
+            
+            summary[key]['total_amount'] += amount
+        
+        return list(summary.values())
     
     @staticmethod
     def get_user_settings(user_id: int):
@@ -149,7 +267,7 @@ class Database:
         if doc.exists:
             return doc.to_dict()
         return {
-            'notification_type': 'balance_only',
+            'notification_type': 'all',  # all, off
             'language': 'ru'
         }
     
@@ -180,57 +298,10 @@ class Database:
         return None
     
     @staticmethod
-    def calculate_balances(chat_id: int):
-        """Рассчитать балансы между участниками"""
-        expenses = Database.get_expenses(chat_id)
-        participants = Database.get_participants(chat_id)
-        
-        if not participants:
-            return {}
-        
-        balances = {p['user_id']: 0 for p in participants}
-        
-        for expense in expenses:
-            payer_id = expense['payer_id']
-            amount = expense['amount']
-            beneficiaries = expense['beneficiaries']
-            
-            if not beneficiaries:
-                continue
-            
-            per_person = amount / len(beneficiaries)
-            balances[payer_id] += amount
-            
-            for beneficiary_id in beneficiaries:
-                balances[beneficiary_id] -= per_person
-        
-        return balances
-    
-    @staticmethod
-    def get_debts(chat_id: int):
-        """Получить упрощенные долги (кто кому сколько должен)"""
-        balances = Database.calculate_balances(chat_id)
-        
-        debtors = {k: -v for k, v in balances.items() if v < -0.01}
-        creditors = {k: v for k, v in balances.items() if v > 0.01}
-        
-        debts = []
-        
-        for debtor_id, debt_amount in sorted(debtors.items(), key=lambda x: x[1], reverse=True):
-            for creditor_id, credit_amount in sorted(creditors.items(), key=lambda x: x[1], reverse=True):
-                if debt_amount < 0.01 or credit_amount < 0.01:
-                    continue
-                
-                transfer_amount = min(debt_amount, credit_amount)
-                debts.append({
-                    'from_id': debtor_id,
-                    'to_id': creditor_id,
-                    'amount': round(transfer_amount, 2)
-                })
-                
-                debtors[debtor_id] -= transfer_amount
-                creditors[creditor_id] -= transfer_amount
-                debt_amount -= transfer_amount
-                credit_amount -= transfer_amount
-        
-        return debts
+    def delete_debt_group(debt_group_id: str):
+        """Удалить группу долгов (мягкое удаление)"""
+        db.collection('debt_groups').document(debt_group_id).update({
+            'is_deleted': True,
+            'deleted_at': datetime.now()
+        })
+        logger.info(f"Deleted debt group {debt_group_id}")
