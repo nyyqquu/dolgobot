@@ -5,14 +5,7 @@ load_dotenv()
 
 # ============ TELEGRAM BOT ============
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-
-if not BOT_TOKEN:
-    raise ValueError(
-        "❌ BOT_TOKEN not found!\n"
-        "Set it in Railway environment variables or create .env file:\n"
-        "BOT_TOKEN=your_bot_token_here"
-    )
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8287466021:AAHsTS7NKl3KirUrk82Q5tIrURd_oIu7srk')
 
 # ============ FIREBASE ============
 
