@@ -350,3 +350,53 @@ class Database:
             'deleted_at': datetime.now()
         })
         logger.info(f"Deleted debt group {debt_group_id}")
+    @staticmethod
+    def delete_trip_completely(chat_id: int):
+        """Полностью удалить поездку и все связанные данные"""
+        try:
+            # 1. Удаляем все индивидуальные долги
+            debts = db.collection('debts').where('chat_id', '==', chat_id).stream()
+            for debt in debts:
+                db.collection('debts').document(debt.id).delete()
+            
+            # 2. Удаляем все группы долгов
+            debt_groups = db.collection('debt_groups').where('chat_id', '==', chat_id).stream()
+            for dg in debt_groups:
+                db.collection('debt_groups').document(dg.id).delete()
+            
+            # 3. Удаляем поездку из user_trips для всех участников
+            trip = Database.get_trip(chat_id)
+            if trip:
+                participants = trip.get('participants', [])
+                for p in participants:
+                    user_id = p['user_id']
+                    user_trips_ref = db.collection('user_trips').document(str(user_id))
+                    user_trips_doc = user_trips_ref.get()
+                    
+                    if user_trips_doc.exists:
+                        data = user_trips_doc.to_dict()
+                        trips = data.get('trips', [])
+                        
+                        # Удаляем chat_id из списка поездок
+                        if chat_id in trips:
+                            trips.remove(chat_id)
+                        
+                        # Если это была активная поездка, сбрасываем её
+                        if data.get('active_trip') == chat_id:
+                            new_active = trips[0] if trips else None
+                            user_trips_ref.update({
+                                'active_trip': new_active,
+                                'trips': trips
+                            })
+                        else:
+                            user_trips_ref.update({'trips': trips})
+            
+            # 4. Удаляем саму поездку
+            db.collection('trips').document(str(chat_id)).delete()
+            
+            logger.info(f"Completely deleted trip {chat_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting trip {chat_id}: {e}")
+            return False
