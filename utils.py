@@ -160,33 +160,54 @@ class Utils:
         return text
     
     @staticmethod
-    def format_history(chat_id: int, limit: int = 20) -> str:
+    def format_history(chat_id: int) -> str:
         """
-        Форматировать историю долгов (ВСЕ долги, включая погашенные)
+        Форматировать историю КАК В БАНКЕ
+        Все события: создание долгов + погашение долгов
         БЕЗ @ чтобы не спамить
         """
         trip = Database.get_trip(chat_id)
         if not trip:
             return "❌ Поездка не найдена"
         
-        debt_groups = Database.get_all_debt_groups(chat_id, limit=limit)
+        events = Database.get_history_events(chat_id)
         participants = Database.get_participants(chat_id)
         currency = trip['currency']
         
-        if not debt_groups:
-            return "📝 *История долгов*\n\nИстория пуста."
+        if not events:
+            return "📝 *История операций*\n\nИстория пуста."
         
-        text = f"🧾 *История долгов*\n\n"
+        text = f"🧾 *История операций*\n\n"
         
-        for dg in debt_groups:
-            payer_name = Utils.get_participant_name(dg['payer_id'], participants, use_tag=False)
-            amount = Utils.format_amount(dg['total_amount'], currency)
-            description = dg.get('description', 'Без описания')
-            category = dg.get('category', '💸')
+        for event in events:
+            timestamp = event['timestamp'].strftime('%d.%m.%Y %H:%M')
             
-            text += f"{category} *{amount}* — {description}\n"
-            text += f"   Заплатил: {payer_name}\n"
-            text += f"   {dg['created_at'].strftime('%d.%m %H:%M')}\n\n"
+            if event['type'] == 'debt_created':
+                # СОЗДАНИЕ ДОЛГА
+                payer_name = Utils.get_participant_name(event['payer_id'], participants, use_tag=False)
+                amount = Utils.format_amount(event['total_amount'], currency)
+                category = event.get('category', '💸')
+                description = event.get('description', 'Долг')
+                
+                text += f"➕ *Новый долг*\n"
+                text += f"{category} {description}\n"
+                text += f"💰 {amount}\n"
+                text += f"👤 Заплатил: {payer_name}\n"
+                text += f"🕐 {timestamp}\n\n"
+            
+            elif event['type'] == 'debt_paid':
+                # ПОГАШЕНИЕ ДОЛГА
+                debtor_name = Utils.get_participant_name(event['debtor_id'], participants, use_tag=False)
+                creditor_name = Utils.get_participant_name(event['creditor_id'], participants, use_tag=False)
+                amount = Utils.format_amount(event['amount'], currency)
+                category = event.get('category', '💸')
+                description = event.get('description', 'Долг')
+                
+                text += f"✅ *Долг возвращен*\n"
+                text += f"{category} {description}\n"
+                text += f"💰 {amount}\n"
+                text += f"👤 {debtor_name} → {creditor_name}\n"
+                text += f"🕐 {timestamp}\n\n"
         
         return text
     
