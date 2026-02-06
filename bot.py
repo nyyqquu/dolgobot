@@ -11,12 +11,15 @@ from telegram.ext import (
 from config import BOT_TOKEN
 from handlers import Handlers, TRIP_NAME, TRIP_CURRENCY
 
-# Настройка логирования
+# Настройка логирования (УСИЛЕНО!)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Включить DEBUG для видимости всех действий
+logging.getLogger('handlers').setLevel(logging.DEBUG)
 
 
 async def post_init(application: Application):
@@ -100,16 +103,32 @@ def main():
         handlers.handle_private_message
     ))
     
-    # ============ ERROR HANDLER ============
+    # ============ ERROR HANDLER (УЛУЧШЕННЫЙ!) ============
     
     async def error_handler(update: Update, context):
-        """Обработка ошибок"""
-        logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
+        """Обработка ошибок С ПОЛНЫМ ЛОГИРОВАНИЕМ"""
+        import traceback
+        
+        # ПОЛНЫЙ traceback в лог
+        logger.error("="*50)
+        logger.error("EXCEPTION CAUGHT!")
+        logger.error(f"Update: {update}")
+        logger.error(f"Error: {context.error}")
+        logger.error("Full traceback:")
+        logger.error(''.join(traceback.format_exception(None, context.error, context.error.__traceback__)))
+        logger.error("="*50)
         
         try:
             if update and update.effective_message:
+                # Отправить ошибку в чат ДЛЯ ОТЛАДКИ
+                error_text = (
+                    f"❌ Произошла ошибка:\n\n"
+                    f"`{type(context.error).__name__}: {str(context.error)}`\n\n"
+                    f"Напишите /help для справки"
+                )
                 await update.effective_message.reply_text(
-                    "❌ Произошла ошибка. Попробуйте ещё раз или напишите /help"
+                    error_text,
+                    parse_mode='Markdown'
                 )
         except Exception as e:
             logger.error(f"Error in error handler: {e}")
