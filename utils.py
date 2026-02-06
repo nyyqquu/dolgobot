@@ -9,6 +9,16 @@ class Utils:
     """Вспомогательные функции"""
     
     @staticmethod
+    def escape_markdown(text: str) -> str:
+        """Экранировать спецсимволы Markdown v1"""
+        if not text:
+            return text
+        special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+        for char in special_chars:
+            text = text.replace(char, f'\\{char}')
+        return text
+    
+    @staticmethod
     def format_amount(amount: float, currency: str) -> str:
         """Форматирование суммы с двумя знаками после запятой"""
         return f"{amount:.2f} {currency}"
@@ -84,8 +94,12 @@ class Utils:
         for currency, debts in by_currency.items():
             text += f"💱 *{currency}:*\n"
             for debt_summary in debts:
-                debtor_name = Utils.get_participant_name(debt_summary['debtor_id'], participants, use_tag=False)
-                creditor_name = Utils.get_participant_name(debt_summary['creditor_id'], participants, use_tag=False)
+                debtor_name = Utils.escape_markdown(
+                    Utils.get_participant_name(debt_summary['debtor_id'], participants, use_tag=False)
+                )
+                creditor_name = Utils.escape_markdown(
+                    Utils.get_participant_name(debt_summary['creditor_id'], participants, use_tag=False)
+                )
                 amount = Utils.format_amount(debt_summary['total_amount'], currency)
                 text += f"{debtor_name} → {creditor_name}: *{amount}*\n"
             text += "\n"
@@ -112,12 +126,14 @@ class Utils:
         text = f"💰 *Мои долги:*\n\n"
         
         for debt in my_debts:
-            creditor_name = Utils.get_participant_name(debt['creditor_id'], participants, use_tag=True)
+            creditor_name = Utils.escape_markdown(
+                Utils.get_participant_name(debt['creditor_id'], participants, use_tag=True)
+            )
             currency = debt.get('currency', trip['currency'])
             amount = Utils.format_amount(debt['amount'], currency)
             
             group_info = debt.get('group_info', {})
-            description = group_info.get('description', 'Без описания')
+            description = Utils.escape_markdown(group_info.get('description', 'Без описания'))
             category = group_info.get('category', '💸')
             
             text += f"{category} *{description}*\n"
@@ -163,7 +179,9 @@ class Utils:
             debts_by_debtor[debtor_id].append(debt)
         
         for debtor_id, debts in debts_by_debtor.items():
-            debtor_name = Utils.get_participant_name(debtor_id, participants, use_tag=True)
+            debtor_name = Utils.escape_markdown(
+                Utils.get_participant_name(debtor_id, participants, use_tag=True)
+            )
             
             # Группируем по валютам для каждого должника
             totals = {}
@@ -179,7 +197,8 @@ class Utils:
             
             for debt in debts:
                 debt_info = Utils.get_debt_group_info(debt['debt_group_id'])
-                text += f"  {debt_info['category']} {debt_info['description']}\n"
+                description = Utils.escape_markdown(debt_info['description'])
+                text += f"  {debt_info['category']} {description}\n"
             
             text += "\n"
         
@@ -221,10 +240,12 @@ class Utils:
             currency = event.get('currency', trip['currency'])
             
             if event['type'] == 'debt_created':
-                payer_name = Utils.get_participant_name(event['payer_id'], participants, use_tag=False)
+                payer_name = Utils.escape_markdown(
+                    Utils.get_participant_name(event['payer_id'], participants, use_tag=False)
+                )
                 amount = Utils.format_amount(event['total_amount'], currency)
                 category = event.get('category', '💸')
-                description = event.get('description', 'Долг')
+                description = Utils.escape_markdown(event.get('description', 'Долг'))
                 
                 text += f"➕ *Новый долг*\n"
                 text += f"{category} {description}\n"
@@ -233,11 +254,15 @@ class Utils:
                 text += f"🕐 {timestamp}\n\n"
             
             elif event['type'] == 'debt_paid':
-                debtor_name = Utils.get_participant_name(event['debtor_id'], participants, use_tag=False)
-                creditor_name = Utils.get_participant_name(event['creditor_id'], participants, use_tag=False)
+                debtor_name = Utils.escape_markdown(
+                    Utils.get_participant_name(event['debtor_id'], participants, use_tag=False)
+                )
+                creditor_name = Utils.escape_markdown(
+                    Utils.get_participant_name(event['creditor_id'], participants, use_tag=False)
+                )
                 amount = Utils.format_amount(event['amount'], currency)
                 category = event.get('category', '💸')
-                description = event.get('description', 'Долг')
+                description = Utils.escape_markdown(event.get('description', 'Долг'))
                 
                 text += f"✅ *Долг возвращен*\n"
                 text += f"{category} {description}\n"
