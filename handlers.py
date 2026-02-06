@@ -66,20 +66,19 @@ class Handlers:
                 trip = Database.get_trip(active_trip_id)
                 if trip:
                     text = (
-                        f"👤 *Личный кабинет*\n\n"
-                        f"🎒 Активная поездка: *{trip['name']}*\n"
+                        f"👤 Личный кабинет\n\n"
+                        f"🎒 Активная поездка: {trip['name']}\n"
                         f"💱 Валюта: {trip['currency']}\n\n"
                         "Выберите действие:"
                     )
                     await update.message.reply_text(
                         text,
-                        parse_mode=ParseMode.MARKDOWN,
                         reply_markup=Keyboards.dm_main_menu()
                     )
                     return
             
             text = (
-                "👋 Привет! Я *TripSplit Bot* — помогаю считать долги в путешествиях.\n\n"
+                "👋 Привет! Я TripSplit Bot — помогаю считать долги в путешествиях.\n\n"
                 "🎯 Основные возможности:\n"
                 "• Автоматический расчёт долгов\n"
                 "• Учёт общих расходов\n"
@@ -88,12 +87,12 @@ class Handlers:
                 "1. Добавьте меня в групповой чат поездки\n"
                 "2. Создайте поездку командой /newtrip\n"
                 "3. Пишите долги прямо в группе:\n"
-                "   `2000 @user описание`\n"
-                "   `2000 THB @user описание` (с валютой)\n\n"
+                "   2000 @user описание\n"
+                "   2000 THB @user описание (с валютой)\n\n"
                 "💡 У вас пока нет активной поездки."
             )
             
-            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(text)
         
         else:
             Database.add_participant(
@@ -107,13 +106,12 @@ class Handlers:
             trip = Database.get_trip(chat.id)
             if trip:
                 text = (
-                    f"🎒 *{trip['name']}*\n"
+                    f"🎒 {trip['name']}\n"
                     f"💱 Валюта: {trip['currency']}\n\n"
                     "Управление поездкой:"
                 )
                 await update.message.reply_text(
                     text,
-                    parse_mode=ParseMode.MARKDOWN,
                     reply_markup=Keyboards.main_group_menu()
                 )
             else:
@@ -126,30 +124,29 @@ class Handlers:
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /help"""
         text = (
-            "ℹ️ *Помощь по боту*\n\n"
-            "*Команды для группового чата:*\n"
+            "ℹ️ Помощь по боту\n\n"
+            "Команды для группового чата:\n"
             "/newtrip — Создать новую поездку\n"
             "/join — Присоединиться к поездке\n"
             "/start — Показать меню поездки\n"
             "/summary — Показать сводку долгов\n"
             "/participants — Показать участников\n"
-            "/deletetrip — Удалить поездку и все данные\n"
-            "/clear — Удалить все сообщения бота\n\n"
-            "*Быстрое добавление долга В ГРУППЕ:*\n"
-            "`2000 @участник1 @участник2 описание`\n"
-            "`2000 THB @участник такси` (с валютой)\n\n"
-            "Пример: `2000 @саша @никита такси`\n"
-            "С валютой: `500 RUB @катя кофе`\n\n"
-            "*Поддерживаемые валюты:*\n"
+            "/deletetrip — Удалить поездку и все данные\n\n"
+            "Быстрое добавление долга В ГРУППЕ:\n"
+            "2000 @участник1 @участник2 описание\n"
+            "2000 THB @участник такси (с валютой)\n\n"
+            "Пример: 2000 @саша @никита такси\n"
+            "С валютой: 500 RUB @катя кофе\n\n"
+            "Поддерживаемые валюты:\n"
             "EUR, USD, RUB, THB, GEL, TRY, CNY\n\n"
-            "*В личном кабинете:*\n"
+            "В личном кабинете:\n"
             "📌 Долги — посмотреть свои долги\n"
             "🧾 История — все долги поездки\n"
             "✅ Вернул долг — отметить возврат\n"
             "✅ Подтвердить возврат — если вам вернули долг"
         )
         
-        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(text)
     
     async def join_trip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Быстрое присоединение к поездке"""
@@ -185,8 +182,7 @@ class Handlers:
         
         username_display = f"@{user.username}" if user.username else user.first_name
         sent = await update.message.reply_text(
-            f"✅ {username_display} добавлен в поездку *{trip['name']}*!",
-            parse_mode=ParseMode.MARKDOWN
+            f"✅ {username_display} добавлен в поездку {trip['name']}!"
         )
         
         await asyncio.sleep(3)
@@ -218,14 +214,14 @@ class Handlers:
         existing_trip = Database.get_trip(chat.id)
         if existing_trip:
             text = (
-                f"ℹ️ Поездка *{existing_trip['name']}* уже создана для этого чата.\n\n"
+                f"ℹ️ Поездка {existing_trip['name']} уже создана для этого чата.\n\n"
                 "Используйте /start для управления или /deletetrip для удаления."
             )
-            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(text)
             return ConversationHandler.END
         
         text = (
-            "🎒 *Создание поездки*\n\n"
+            "🎒 Создание поездки\n\n"
             "Как назовём поездку?\n"
             "Напишите название или нажмите кнопку, чтобы использовать название чата."
         )
@@ -237,7 +233,6 @@ class Handlers:
         
         await update.message.reply_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
@@ -265,14 +260,13 @@ class Handlers:
         context.user_data['trip_name'] = trip_name
         
         text = (
-            f"📝 Название: *{trip_name}*\n\n"
+            f"📝 Название: {trip_name}\n\n"
             "Теперь выберите валюту поездки:"
         )
         
         await context.bot.send_message(
             chat_id=chat.id,
             text=text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.currency_selection()
         )
         
@@ -287,13 +281,12 @@ class Handlers:
         context.user_data['trip_name'] = trip_name
         
         text = (
-            f"📝 Название: *{trip_name}*\n\n"
+            f"📝 Название: {trip_name}\n\n"
             "Теперь выберите валюту поездки:"
         )
         
         await query.edit_message_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.currency_selection()
         )
         
@@ -324,26 +317,24 @@ class Handlers:
         Database.link_user_to_trip(user.id, chat.id)
         
         text = (
-            f"✅ Поездка *{trip['name']}* ({currency}) создана!\n\n"
+            f"✅ Поездка {trip['name']} ({currency}) создана!\n\n"
             f"👥 Участники добавляются автоматически\n"
             f"💡 Или используйте /join для быстрого добавления\n\n"
-            f"💸 *Добавление долгов:*\n"
-            f"`2000 @user описание` — валюта {currency}\n"
-            f"`2000 THB @user такси` — другая валюта\n\n"
+            f"💸 Добавление долгов:\n"
+            f"2000 @user описание — валюта {currency}\n"
+            f"2000 THB @user такси — другая валюта\n\n"
             f"Управление поездкой:"
         )
         
         await query.edit_message_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.main_group_menu()
         )
         
-        summary_text = f"📌 *Сводка долгов ({currency})*\n\n✅ Пока долгов нет"
+        summary_text = f"📌 Сводка долгов ({currency})\n\n✅ Пока долгов нет"
         await context.bot.send_message(
             chat_id=chat.id,
             text=summary_text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.summary_actions(self.bot_username, chat.id)
         )
         
@@ -382,7 +373,7 @@ class Handlers:
         ]
         
         text = (
-            f"⚠️ *Удаление поездки \"{trip['name']}\"*\n\n"
+            f"⚠️ Удаление поездки \"{trip['name']}\"\n\n"
             "Будут удалены:\n"
             "• Все долги\n"
             "• История расходов\n"
@@ -393,7 +384,6 @@ class Handlers:
         
         await update.message.reply_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
@@ -462,14 +452,14 @@ class Handlers:
         if not participants:
             text = "👥 Участников пока нет."
         else:
-            text = f"👥 *Участники поездки \"{trip['name']}\"* ({len(participants)}):\n\n"
+            text = f"👥 Участники поездки \"{trip['name']}\" ({len(participants)}):\n\n"
             for p in participants:
                 if p.get('username'):
                     text += f"• @{p['username']} ({p['first_name']})\n"
                 else:
                     text += f"• {p['first_name']}\n"
         
-        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(text)
     
     async def show_dm_cabinet(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать личный кабинет"""
@@ -491,8 +481,8 @@ class Handlers:
             trip_count = len(user_trips_doc.get('trips', [])) if user_trips_doc else 1
             
             text = (
-                f"👤 *Личный кабинет*\n\n"
-                f"🎒 Активная поездка: *{trip['name']}*\n"
+                f"👤 Личный кабинет\n\n"
+                f"🎒 Активная поездка: {trip['name']}\n"
                 f"💱 Валюта: {trip['currency']}\n"
             )
             
@@ -504,7 +494,7 @@ class Handlers:
             keyboard_markup = Keyboards.dm_main_menu(show_switch_trip=(trip_count > 1))
         else:
             text = (
-                "👤 *Личный кабинет*\n\n"
+                "👤 Личный кабинет\n\n"
                 "У вас пока нет активной поездки.\n\n"
                 "Чтобы начать:\n"
                 "1. Добавьте бота в групповой чат\n"
@@ -516,13 +506,11 @@ class Handlers:
         if update.callback_query:
             await query.edit_message_text(
                 text,
-                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=keyboard_markup
             )
         else:
             await message.reply_text(
                 text,
-                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=keyboard_markup
             )
     
@@ -546,7 +534,7 @@ class Handlers:
         active_trip_id = user_trips_doc.get('active_trip')
         trip_ids = user_trips_doc.get('trips', [])
         
-        text = "🔄 *Переключение поездки*\n\nВыберите активную поездку:\n\n"
+        text = "🔄 Переключение поездки\n\nВыберите активную поездку:\n\n"
         
         keyboard = []
         for trip_id in trip_ids:
@@ -565,7 +553,6 @@ class Handlers:
         
         await query.edit_message_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
@@ -606,18 +593,16 @@ class Handlers:
             Database.add_participant(chat_id, user.id, user.username, user.first_name)
             Database.link_user_to_trip(user.id, chat_id)
         
-        text = "📌 *Мои долги*\n\nВыберите вкладку:"
+        text = "📌 Мои долги\n\nВыберите вкладку:"
         
         if query:
             await query.edit_message_text(
                 text,
-                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=Keyboards.debts_tabs()
             )
         else:
             await update.message.reply_text(
                 text,
-                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=Keyboards.debts_tabs()
             )
     
@@ -673,7 +658,6 @@ class Handlers:
             )
             return
         
-        # Добавляем group_info к каждому долгу
         for debt in debts_to_me:
             try:
                 from firebase_admin import firestore
@@ -734,13 +718,12 @@ class Handlers:
         current_type = settings.get('notification_type', 'all')
         
         text = (
-            "🔔 *Настройки уведомлений*\n\n"
+            "🔔 Настройки уведомлений\n\n"
             "Выберите, когда получать уведомления:"
         )
         
         await query.edit_message_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.notification_settings(current_type)
         )
     
@@ -776,13 +759,11 @@ class Handlers:
         
         participants = Database.get_participants(chat.id)
         
-        # ПАРСИМ ВАЛЮТУ
         amount, currency, remaining_text = Utils.parse_currency_from_text(text)
         
         if amount is None:
             sent = await update.message.reply_text(
-                "❌ Неверный формат. Используйте:\n`2000 @user описание` или\n`2000 THB @user описание`",
-                parse_mode=ParseMode.MARKDOWN,
+                "❌ Неверный формат. Используйте:\n2000 @user описание или\n2000 THB @user описание",
                 reply_to_message_id=update.message.message_id
             )
             await asyncio.sleep(5)
@@ -793,7 +774,6 @@ class Handlers:
                 pass
             return
         
-        # Если валюта не указана, берем из поездки
         if currency is None:
             currency = trip['currency']
         
@@ -855,8 +835,8 @@ class Handlers:
         payer_name = Utils.get_participant_name(payer_id, participants)
         
         response_text = (
-            f"✅ *Долг добавлен!*\n\n"
-            f"💸 *{description}*\n"
+            f"✅ Долг добавлен!\n\n"
+            f"💸 {description}\n"
             f"💰 Общая сумма: {Utils.format_amount(amount, currency)}\n"
             f"👤 Заплатил: {payer_name}\n"
             f"💳 Долг каждого: {Utils.format_amount(amount_per_person, currency)}\n\n"
@@ -865,7 +845,6 @@ class Handlers:
         
         sent_response = await update.message.reply_text(
             response_text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_to_message_id=update.message.message_id
         )
         
@@ -909,16 +888,15 @@ class Handlers:
             
             try:
                 text = (
-                    f"🔔 *Новый долг в \"{trip['name']}\"*\n\n"
+                    f"🔔 Новый долг в \"{trip['name']}\"\n\n"
                     f"{category} {description}\n"
-                    f"💰 Вы должны {payer_name}: *{Utils.format_amount(amount, currency)}*\n\n"
+                    f"💰 Вы должны {payer_name}: {Utils.format_amount(amount, currency)}\n\n"
                     f"Нажмите /start чтобы посмотреть все долги"
                 )
                 
                 await context.bot.send_message(
                     chat_id=debtor_id,
-                    text=text,
-                    parse_mode=ParseMode.MARKDOWN
+                    text=text
                 )
             except Exception as e:
                 logger.error(f"Failed to send notification to {debtor_id}: {e}")
@@ -926,16 +904,15 @@ class Handlers:
         try:
             total_owed = sum(d['amount'] for d in individual_debts)
             text = (
-                f"✅ *Долг создан в \"{trip['name']}\"*\n\n"
+                f"✅ Долг создан в \"{trip['name']}\"\n\n"
                 f"{category} {description}\n"
-                f"💰 Вам должны: *{Utils.format_amount(total_owed, currency)}*\n"
+                f"💰 Вам должны: {Utils.format_amount(total_owed, currency)}\n"
                 f"👥 Должников: {len(individual_debts)}"
             )
             
             await context.bot.send_message(
                 chat_id=payer_id,
-                text=text,
-                parse_mode=ParseMode.MARKDOWN
+                text=text
             )
         except Exception as e:
             logger.error(f"Failed to send notification to payer {payer_id}: {e}")
@@ -975,8 +952,8 @@ class Handlers:
         amount = Utils.format_amount(debt['amount'], currency)
         
         text = (
-            f"{category} *{description}*\n\n"
-            f"💰 Сумма: *{amount}*\n"
+            f"{category} {description}\n\n"
+            f"💰 Сумма: {amount}\n"
             f"👤 Должен: {creditor_name}\n"
             f"📅 Создан: {debt['created_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
             f"Вернули долг?"
@@ -984,7 +961,6 @@ class Handlers:
         
         await query.edit_message_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.debt_pay_button(debt_id)
         )
     
@@ -1023,8 +999,8 @@ class Handlers:
         amount = Utils.format_amount(debt['amount'], currency)
         
         text = (
-            f"{category} *{description}*\n\n"
-            f"💰 Сумма: *{amount}*\n"
+            f"{category} {description}\n\n"
+            f"💰 Сумма: {amount}\n"
             f"👤 Должник: {debtor_name}\n"
             f"📅 Создан: {debt['created_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
             f"Должник вернул вам деньги?"
@@ -1032,7 +1008,6 @@ class Handlers:
         
         await query.edit_message_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
             reply_markup=Keyboards.debt_confirm_button(debt_id)
         )
     
@@ -1074,27 +1049,25 @@ class Handlers:
             currency = group_data.get('currency', trip['currency'])
         
         await query.edit_message_text(
-            f"✅ *Долг возвращен!*\n\n"
+            f"✅ Долг возвращен!\n\n"
             f"{category} {description}\n"
             f"💰 Сумма: {Utils.format_amount(amount, currency)}\n"
             f"👤 Кредитор: {creditor_name}\n\n"
-            f"Спасибо за честность! 🎉",
-            parse_mode=ParseMode.MARKDOWN
+            f"Спасибо за честность! 🎉"
         )
         
         try:
             text = (
-                f"💰 *Долг возвращен!*\n\n"
+                f"💰 Долг возвращен!\n\n"
                 f"👤 {debtor_name} вернул вам долг:\n"
                 f"{category} {description}\n"
-                f"💵 Сумма: *{Utils.format_amount(amount, currency)}*\n\n"
+                f"💵 Сумма: {Utils.format_amount(amount, currency)}\n\n"
                 f"Поездка: {trip['name']}"
             )
             
             await context.bot.send_message(
                 chat_id=creditor_id,
-                text=text,
-                parse_mode=ParseMode.MARKDOWN
+                text=text
             )
         except Exception as e:
             logger.error(f"Failed to notify creditor: {e}")
@@ -1147,26 +1120,24 @@ class Handlers:
             currency = group_data.get('currency', trip['currency'])
         
         await query.edit_message_text(
-            f"✅ *Возврат подтверждён!*\n\n"
+            f"✅ Возврат подтверждён!\n\n"
             f"{category} {description}\n"
             f"💰 Сумма: {Utils.format_amount(amount, currency)}\n"
             f"👤 Должник: {debtor_name}\n\n"
-            f"Спасибо за подтверждение! 🎉",
-            parse_mode=ParseMode.MARKDOWN
+            f"Спасибо за подтверждение! 🎉"
         )
         
         try:
             text = (
-                f"✅ *{creditor_name} подтвердил возврат долга*\n\n"
+                f"✅ {creditor_name} подтвердил возврат долга\n\n"
                 f"{category} {description}\n"
-                f"💵 Сумма: *{Utils.format_amount(amount, currency)}*\n\n"
+                f"💵 Сумма: {Utils.format_amount(amount, currency)}\n\n"
                 f"Поездка: {trip['name']}"
             )
             
             await context.bot.send_message(
                 chat_id=debtor_id,
-                text=text,
-                parse_mode=ParseMode.MARKDOWN
+                text=text
             )
         except Exception as e:
             logger.error(f"Failed to notify debtor: {e}")
@@ -1224,7 +1195,7 @@ class Handlers:
         
         elif data.startswith("pay_debt_"):
             return await self.pay_debt(update, context)
-        
+
         elif data == "show_add_expense_info":
             await query.answer()
             chat = query.message.chat
